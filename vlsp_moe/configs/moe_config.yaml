@@ -1,7 +1,7 @@
 device: mps  # mps, cuda, cpu
 
 model:
-  model_id_or_path: Qwen/Qwen1.5-1.8B
+  model_id_or_path: Qwen/Qwen3-1.7B
   template: qwen
 
 # MoE specific configuration

@@ -62,7 +62,7 @@ class MoEExpertRouter(nn.Module):
                 lora_alpha=16,
                 lora_dropout=0.05,
                 bias="none",
-                task_type="SEQ_2_SEQ_LM",
+                task_type="CAUSAL_LM",
             )
             self.expert_adapters[expert_name] = lora_config
 
