@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
@@ -9,11 +9,10 @@ from transformers import (
     TrainingArguments,
     DataCollatorForLanguageModeling,
 )
-from peft import LoraConfig, get_peft_model, TaskType
+from peft import LoraConfig, get_peft_model
 from config import Config
 import json
 import logging
-import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
