@@ -9,6 +9,10 @@ echo "Starting MoE Model Training Pipeline..."
 echo "Step 1: Setting up environment..."
 pip install -r requirements.txt
 
+# Step 1.1: Convert CSV to JSONL for MoE training
+echo "Converting CSV to JSONL..."
+python vlsp_moe/scripts/convert_csv_to_jsonl.py
+
 # Step 2: Prepare data for all experts
 echo "Step 2: Preparing data for all experts..."
 cd scripts
@@ -44,5 +48,5 @@ echo "- Number of experts: 3"
 echo "- Expert 1: Medical domain (EN->VI)"
 echo "- Expert 2: General translation (EN->VI)"
 echo "- Expert 3: General translation (VI->EN)"
-echo "- Base model: Qwen/Qwen1.5-1.8B"
+echo "- Base model: Qwen/Qwen3-1.7B"
 echo "- Training technique: LoRA with MoE routing"

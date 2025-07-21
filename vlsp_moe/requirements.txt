@@ -25,3 +25,6 @@ protobuf>=3.20.0
 
 spacy>=3.6.0
 nltk>=3.8.0
+sentencepiece>=0.1.99
+sentence-transformers>=2.2.2
+gdown>=4.7.0
