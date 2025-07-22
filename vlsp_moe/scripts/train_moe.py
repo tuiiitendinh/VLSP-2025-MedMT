@@ -11,8 +11,10 @@ from transformers import (
 )
 from peft import LoraConfig, get_peft_model
 from config import Config
+from secret_loader import setup_wandb_quick
 import json
 import logging
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -234,6 +236,15 @@ def create_moe_model(config):
 def train_moe_model():
     """Main training function for MoE model."""
     logger.info("Starting MoE training...")
+    
+    # Setup W&B authentication
+    logger.info("Setting up Weights & Biases...")
+    try:
+        setup_wandb_quick(project_name="vlsp-medmt", disabled=False)
+    except Exception as e:
+        logger.warning(f"W&B setup failed: {e}. Continuing without W&B...")
+        os.environ["WANDB_DISABLED"] = "true"
+    
     config = Config("../configs/moe_config.yaml")
 
     model, tokenizer, moe_router = create_moe_model(config)
