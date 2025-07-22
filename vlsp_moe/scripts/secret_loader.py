@@ -115,7 +115,6 @@ class SecretLoader:
             os.environ["WANDB_API_KEY"] = wandb_key
             print("✓ W&B API key set")
         else:
-            # Disable wandb if no key provided
             os.environ["WANDB_DISABLED"] = "true"
             print("W&B disabled - no API key provided")
             return
@@ -127,7 +126,7 @@ class SecretLoader:
             os.environ["WANDB_ENTITY"] = entity
         
         # Set non-interactive mode
-        os.environ["WANDB_MODE"] = "offline"  # Can be changed to "online" if needed
+        os.environ["WANDB_MODE"] = "online"  
         
         print(f"✓ W&B configured for project: {project_name or 'default'}")
 
