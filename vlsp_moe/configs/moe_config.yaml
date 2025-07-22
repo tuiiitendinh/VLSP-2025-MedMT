@@ -35,7 +35,7 @@ training:
   output_dir: outputs/moe_model
   per_device_train_batch_size: 4
   per_device_eval_batch_size: 4
-  num_train_epochs: 5
+  num_train_epochs: 3
   logging_steps: 50
   save_steps: 500
   save_total_limit: 3
@@ -53,13 +53,14 @@ training:
   greater_is_better: false
   label_names: ["labels"]
   run_name: moe_medmt_run1
+  report_to: []  # Disable default reporting, will be handled by secret_loader
 
 data:
   train_path: ../data/train.en.txt
   target_path: ../data/train.vi.txt
   tokenized: ../data/tokenized
   num_proc: 4
-  max_length: 2048 # cuz max number of words (tokenized by space) is 400 
+  max_length: 2048 # Because max number of words (tokenized by space) is 400 
 
 dataset:
   train_file: ../data/processed/train.jsonl
