@@ -3,7 +3,7 @@ import json
 import os
 
 def main():
-    csv_path = "../train_data/train_cleaned.csv"
+    csv_path = "../train_data/train_data.csv"
     output_dir = "../data/processed"
     os.makedirs(output_dir, exist_ok=True)
 
