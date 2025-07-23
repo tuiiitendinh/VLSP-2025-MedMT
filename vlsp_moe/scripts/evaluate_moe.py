@@ -6,10 +6,13 @@ from peft import PeftModel
 import argparse
 from typing import Dict
 import logging
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 class MoEInference:
     """Inference class for MoE model."""
@@ -147,13 +150,13 @@ def main():
     parser.add_argument("--model_path", type=str, required=True,
                        help="Path to the fine-tuned MoE model")
     parser.add_argument("--config_path", type=str, 
-                       default="../configs/moe_config.yaml",
+                       default=os.path.join(PROJECT_ROOT, "configs", "moe_config.yaml"),
                        help="Path to the configuration file")
     parser.add_argument("--test_file", type=str, 
-                       default="../data/processed/val.jsonl",
+                       default=os.path.join(PROJECT_ROOT, "data", "processed", "val.jsonl"),
                        help="Path to the test file")
     parser.add_argument("--output_file", type=str, 
-                       default="evaluation_results.json",
+                       default=os.path.join(PROJECT_ROOT, "evaluation_results.json"),
                        help="Path to save evaluation results")
     parser.add_argument("--interactive", action="store_true",
                        help="Run in interactive mode")

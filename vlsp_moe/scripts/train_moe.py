@@ -13,10 +13,21 @@ from peft import LoraConfig, get_peft_model
 from config import Config
 import json
 import logging
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+
+# Auto-select device
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+    logger.info("Using GPU: %s", torch.cuda.get_device_name(DEVICE))
+else:
+    DEVICE = torch.device("cpu")
+    logger.info("Using CPU")
 
 
 class MoEGatingNetwork(nn.Module):
@@ -223,9 +234,9 @@ def create_moe_model(config):
     # Create MoE router after LoRA is applied
     moe_router = MoEExpertRouter(model, tokenizer, num_experts=3)
     
-    # Move MoE router to the same device as the model
-    device = next(model.parameters()).device
-    moe_router = moe_router.to(device)
+    # Move MoE router and model to the selected device
+    model = model.to(DEVICE)
+    moe_router = moe_router.to(DEVICE)
 
     logger.info("MoE model created successfully")
     return model, tokenizer, moe_router
@@ -234,15 +245,21 @@ def create_moe_model(config):
 def train_moe_model():
     """Main training function for MoE model."""
     logger.info("Starting MoE training...")
-    config = Config("../configs/moe_config.yaml")
+    config = Config(os.path.join(PROJECT_ROOT, "vlsp_moe", "configs", "moe_config.yaml"))
 
     model, tokenizer, moe_router = create_moe_model(config)
 
     logger.info("Loading training dataset...")
-    train_dataset = MoEDataset(config.dataset["train_file"], tokenizer)
+    train_file = config.dataset["train_file"]
+    if not os.path.isabs(train_file):
+        train_file = os.path.join(PROJECT_ROOT, train_file)
+    train_dataset = MoEDataset(train_file, tokenizer)
     
     logger.info("Loading validation dataset...")
-    eval_dataset = MoEDataset(config.dataset["val_file"], tokenizer)
+    val_file = config.dataset["val_file"]
+    if not os.path.isabs(val_file):
+        val_file = os.path.join(PROJECT_ROOT, val_file)
+    eval_dataset = MoEDataset(val_file, tokenizer)
 
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer, mlm=False, pad_to_multiple_of=8  

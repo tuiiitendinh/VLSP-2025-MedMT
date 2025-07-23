@@ -3,6 +3,8 @@ import os
 import random
 import re
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+
 
 def is_medical_text(text):
     """Simple heuristic to identify medical texts."""
@@ -111,8 +113,8 @@ def main():
     print("Loading parallel data...")
 
     # Load your parallel data
-    en_file = "../data/train.en.txt"
-    vi_file = "../data/train.vi.txt"
+    en_file = os.path.join(PROJECT_ROOT, "data", "train.en.txt")
+    vi_file = os.path.join(PROJECT_ROOT, "data", "train.vi.txt")
 
     if not os.path.exists(en_file) or not os.path.exists(vi_file):
         print(f"Error: Could not find {en_file} or {vi_file}")
@@ -155,7 +157,7 @@ def main():
         expert_name="medical",
         src_texts=medical_en,
         tgt_texts=medical_vi,
-        output_file="../data/processed/medical_train.jsonl",
+        output_file=os.path.join(PROJECT_ROOT, "data", "processed", "medical_train.jsonl"),
         task_description="Translate the following English medical text to Vietnamese",
     )
 
@@ -165,7 +167,7 @@ def main():
         expert_name="en_vi",
         src_texts=en_vi_en,
         tgt_texts=en_vi_vi,
-        output_file="../data/processed/en_vi_train.jsonl",
+        output_file=os.path.join(PROJECT_ROOT, "data", "processed", "en_vi_train.jsonl"),
         task_description="Translate the following English sentence to Vietnamese",
     )
 
@@ -175,23 +177,23 @@ def main():
         expert_name="vi_en",
         src_texts=vi_en_vi,  # Vietnamese as source
         tgt_texts=vi_en_en,  # English as target
-        output_file="../data/processed/vi_en_train.jsonl",
+        output_file=os.path.join(PROJECT_ROOT, "data", "processed", "vi_en_train.jsonl"),
         task_description="Translate the following Vietnamese sentence to English",
     )
 
     # Combine all expert data into a single training file
     print("Combining all expert data...")
-    combined_output = "../data/processed/train.jsonl"
+    combined_output = os.path.join(PROJECT_ROOT, "data", "processed", "train.jsonl")
     total_samples = 0
 
-    with open(combined_output, "w", encoding="utf-8") as outf:
-        for expert_file in [
-            "../data/processed/medical_train.jsonl",
-            "../data/processed/en_vi_train.jsonl",
-            "../data/processed/vi_en_train.jsonl",
-        ]:
-            if os.path.exists(expert_file):
-                with open(expert_file, "r", encoding="utf-8") as inf:
+    for expert_file in [
+        os.path.join(PROJECT_ROOT, "data", "processed", "medical_train.jsonl"),
+        os.path.join(PROJECT_ROOT, "data", "processed", "en_vi_train.jsonl"),
+        os.path.join(PROJECT_ROOT, "data", "processed", "vi_en_train.jsonl"),
+    ]:
+        if os.path.exists(expert_file):
+            with open(expert_file, "r", encoding="utf-8") as inf:
+                with open(combined_output, "a", encoding="utf-8") as outf:
                     for line in inf:
                         outf.write(line)
                         total_samples += 1
@@ -199,10 +201,10 @@ def main():
     print(f"\nData preparation completed!")
     print(f"Total training samples: {total_samples}")
     print(f"Files created:")
-    print(f"  - Medical expert: ../data/processed/medical_train.jsonl")
-    print(f"  - EN->VI expert: ../data/processed/en_vi_train.jsonl")
-    print(f"  - VI->EN expert: ../data/processed/vi_en_train.jsonl")
-    print(f"  - Combined: ../data/processed/train.jsonl")
+    print(f"  - Medical expert: {os.path.join(PROJECT_ROOT, 'data', 'processed', 'medical_train.jsonl')}")
+    print(f"  - EN->VI expert: {os.path.join(PROJECT_ROOT, 'data', 'processed', 'en_vi_train.jsonl')}")
+    print(f"  - VI->EN expert: {os.path.join(PROJECT_ROOT, 'data', 'processed', 'vi_en_train.jsonl')}")
+    print(f"  - Combined: {os.path.join(PROJECT_ROOT, 'data', 'processed', 'train.jsonl')}")
 
 
 if __name__ == "__main__":

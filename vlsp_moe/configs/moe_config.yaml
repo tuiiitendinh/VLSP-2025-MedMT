@@ -34,7 +34,7 @@ training:
   output_dir: outputs/moe_model
   per_device_train_batch_size: 4
   per_device_eval_batch_size: 4
-  num_train_epochs: 5
+  num_train_epochs: 1
   logging_steps: 50
   save_steps: 500
   save_total_limit: 3
@@ -54,17 +54,17 @@ training:
   run_name: moe_medmt_run1
 
 data:
-  train_path: ../data/train.en.txt
-  target_path: ../data/train.vi.txt
-  tokenized: ../data/tokenized
+  train_path: /home/users/sutd/1010047/VLSP-2025-MedMT/data/train.en.txt
+  target_path: ./home/users/sutd/1010047/VLSP-2025-MedMT/data/train.vi.txt
+  tokenized: ./home/users/sutd/1010047/VLSP-2025-MedMT/data/tokenized
   num_proc: 4
   max_length: 2048 # cuz max number of words (tokenized by space) is 400 
 
 dataset:
-  train_file: ../data/processed/train.jsonl
-  val_file: ../data/processed/val.jsonl
-  medical_file: ../data/processed/medical_train.jsonl
-  en_vi_file: ../data/processed/en_vi_train.jsonl
-  vi_en_file: ../data/processed/vi_en_train.jsonl  
+  train_file: /home/users/sutd/1010047/VLSP-2025-MedMT/data/processed/train.jsonl
+  val_file: /home/users/sutd/1010047/VLSP-2025-MedMT/data/processed/val.jsonl
+  medical_file: /home/users/sutd/1010047/VLSP-2025-MedMT/data/processed/medical_train.jsonl
+  en_vi_file: /home/users/sutd/1010047/VLSP-2025-MedMT/data/processed/en_vi_train.jsonl
+  vi_en_file: /home/users/sutd/1010047/VLSP-2025-MedMT/data/processed/vi_en_train.jsonl
 
 

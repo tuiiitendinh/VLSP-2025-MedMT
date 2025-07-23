@@ -5,6 +5,8 @@ Summary of the MoE data preparation results.
 import json
 import os
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+
 def show_data_summary():
     """Show a summary of the prepared data."""
     print("="*60)
@@ -12,7 +14,7 @@ def show_data_summary():
     print("="*60)
     
     # Check all processed files
-    processed_dir = "../data/processed/"
+    processed_dir = os.path.join(PROJECT_ROOT, "data", "processed")
     files_info = {
         "medical_train.jsonl": "Medical Domain Expert",
         "en_vi_train.jsonl": "EN→VI Translation Expert", 
