@@ -13,11 +13,15 @@ echo "Starting MoE Model Training Pipeline..."
 echo "Step 1: Setting up environment..."
 #pip install -r vlsp_moe/requirements.txt
 
-# Step 1.1: Convert CSV to parallel TXT for MoE training
+# Step 1.1: Train SentencePiece tokenizer (if using SPM)
+echo "Training SentencePiece tokenizer..."
+python vlsp_moe/scripts/train_tokenizer.py --config vlsp_moe/configs/moe_config.yaml --output_dir vlsp_moe/tokenizer_output
+
+# Step 1.2: Convert CSV to parallel TXT for MoE training
 echo "Converting CSV to parallel TXT..."
 python vlsp_moe/scripts/csv_to_parallel_txt.py
 
-# Step 1.2: Convert CSV to JSONL for MoE training
+# Step 1.3: Convert CSV to JSONL for MoE training
 echo "Converting CSV to JSONL..."
 python vlsp_moe/scripts/convert_csv_to_jsonl.py
 

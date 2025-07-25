@@ -1,4 +1,4 @@
-[# MoE Model for Machine Translation
+# MoE Model for Machine Translation
 
 This implementation provides a Mixture of Experts (MoE) model for machine translation tasks, specifically designed for Vietnamese-English translation with domain adaptation for medical texts.
 
