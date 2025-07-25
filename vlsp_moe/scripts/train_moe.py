@@ -11,6 +11,8 @@ from transformers import (
 )
 from peft import LoraConfig, get_peft_model
 from config import Config
+from spm_tokenizer import SPMTokenizer, create_spm_tokenizer
+from spm_data_collator import SPMDataCollatorForLanguageModeling
 import json
 import logging
 import os
@@ -99,7 +101,13 @@ class MoEExpertRouter(nn.Module):
         else:
             # During inference, use gating network
             with torch.no_grad():
-                embeddings = self.model.get_input_embeddings()(input_ids)
+                # Handle both HuggingFace and SPM tokenizers
+                if hasattr(self.model, 'get_input_embeddings'):
+                    embeddings = self.model.get_input_embeddings()(input_ids)
+                else:
+                    # For models without get_input_embeddings, use embedding layer directly
+                    embeddings = self.model.model.embed_tokens(input_ids)
+                
                 pooled_embeddings = embeddings.mean(dim=1)
                 
                 if self.gating_network.gate[0].weight.device != pooled_embeddings.device:
@@ -218,14 +226,69 @@ def create_moe_model(config):
     """Create MoE model with multiple experts."""
     logger.info("Loading base model and tokenizer...")
 
-    # Load base model and tokenizer using standard transformers
-    model_name = config.model["model_id_or_path"]
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    # Check tokenizer type from config
+    tokenizer_config = getattr(config, 'tokenizer', {})
+    tokenizer_type = tokenizer_config.get('type', 'huggingface')
+    
+    if tokenizer_type == 'sentencepiece':
+        # Use SentencePiece tokenizer
+        logger.info("Using SentencePiece tokenizer")
+        
+        # Check if we have a pre-trained SPM model
+        model_prefix = tokenizer_config.get('model_prefix', 'spm_model')
+        spm_model_path = f"{model_prefix}.model"
+        
+        if os.path.exists(spm_model_path):
+            # Load existing SPM model
+            tokenizer = SPMTokenizer(model_path=spm_model_path, config=tokenizer_config)
+            logger.info(f"Loaded existing SentencePiece model from {spm_model_path}")
+        else:
+            # Need to train SPM model first
+            logger.info("Training new SentencePiece model...")
+            
+            # Prepare training data
+            from prepare_tokenizer_data import prepare_tokenizer_data
+            
+            # Get current directory for config
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            config_path = os.path.join(current_dir, "..", "configs", "moe_config.yaml")
+            
+            # Prepare data files
+            tokenizer_data_dir = os.path.join(current_dir, "..", "tokenizer_data")
+            data_files = prepare_tokenizer_data(config_path, tokenizer_data_dir)
+            
+            if not data_files:
+                raise ValueError("Failed to prepare training data for SentencePiece tokenizer")
+            
+            # Train tokenizer
+            tokenizer = create_spm_tokenizer(
+                config=tokenizer_config,
+                data_files=data_files,
+                model_path=None
+            )
+            
+        # Load base model (we still use HuggingFace model architecture)
+        model_name = config.model["model_id_or_path"]
+        model = AutoModelForCausalLM.from_pretrained(model_name)
+        
+        # Resize model embeddings to match tokenizer vocab size
+        tokenizer_vocab_size = tokenizer.get_vocab_size()
+        model_vocab_size = model.config.vocab_size
+        
+        if tokenizer_vocab_size != model_vocab_size:
+            logger.info(f"Resizing model embeddings from {model_vocab_size} to {tokenizer_vocab_size}")
+            model.resize_token_embeddings(tokenizer_vocab_size)
+            
+    else:
+        # Use HuggingFace tokenizer (default)
+        logger.info("Using HuggingFace tokenizer")
+        model_name = config.model["model_id_or_path"]
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForCausalLM.from_pretrained(model_name)
 
-    # Add special tokens if needed
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+        # Add special tokens if needed
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
     # Apply LoRA to the base model
     lora_config = LoraConfig(**config.lora)
@@ -261,9 +324,22 @@ def train_moe_model():
         val_file = os.path.join(PROJECT_ROOT, val_file)
     eval_dataset = MoEDataset(val_file, tokenizer)
 
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer, mlm=False, pad_to_multiple_of=8  
-    )
+    # Create appropriate data collator based on tokenizer type
+    tokenizer_config = getattr(config, 'tokenizer', {})
+    tokenizer_type = tokenizer_config.get('type', 'huggingface')
+    
+    if tokenizer_type == 'sentencepiece':
+        data_collator = SPMDataCollatorForLanguageModeling(
+            tokenizer=tokenizer, 
+            mlm=False, 
+            pad_to_multiple_of=8
+        )
+    else:
+        data_collator = DataCollatorForLanguageModeling(
+            tokenizer=tokenizer, 
+            mlm=False, 
+            pad_to_multiple_of=8  
+        )
     
     training_config = config.training.copy()
     training_config["learning_rate"] = float(training_config["learning_rate"])

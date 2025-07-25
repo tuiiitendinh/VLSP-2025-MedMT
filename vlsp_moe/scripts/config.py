@@ -13,6 +13,7 @@ class Config:
         self.device_str = self.cfg.get("device", "cpu").lower()
         self.device = self._resolve_device(self.device_str)
         self.model = self.cfg.get("model", {})
+        self.tokenizer = self.cfg.get("tokenizer", {})
         self.lora = self.cfg.get("lora", {})
         self.training = self.cfg.get("training", {})
         self.data = self.cfg.get("data", {})
@@ -94,6 +95,8 @@ class Config:
             self.device = self._resolve_device(self.device_str)
         elif keys[0] == "model":
             self.model = self.cfg.get("model", {})
+        elif keys[0] == "tokenizer":
+            self.tokenizer = self.cfg.get("tokenizer", {})
         elif keys[0] == "lora":
             self.lora = self.cfg.get("lora", {})
         elif keys[0] == "training":
