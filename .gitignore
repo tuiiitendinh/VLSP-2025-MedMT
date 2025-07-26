@@ -80,10 +80,8 @@ venv.bak/
 .dmypy.json
 dmypy.json
 *.json
-*.txt
 *.arrow
 *.csv
-*.txt
 *.pickle
 *.png
 *.pdf
