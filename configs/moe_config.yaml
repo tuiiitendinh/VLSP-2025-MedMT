@@ -1,0 +1,93 @@
+data:
+  max_length: 2048
+  num_proc: 4
+  target_path: /workspace/VLSP-2025-MedMT/data/train.vi.txt
+  tokenized: /workspace/VLSP-2025-MedMT/data/tokenized
+  train_path: /workspace/VLSP-2025-MedMT/data/train.en.txt
+dataset:
+  en_vi_file: /workspace/VLSP-2025-MedMT/data/processed/en_vi_train.jsonl
+  medical_file: /workspace/VLSP-2025-MedMT/data/processed/medical_train.jsonl
+  train_file: /workspace/VLSP-2025-MedMT/data/processed/train.jsonl
+  val_file: /workspace/VLSP-2025-MedMT/data/processed/val.jsonl
+  vi_en_file: /workspace/VLSP-2025-MedMT/data/processed/vi_en_train.jsonl
+device: cuda
+lora:
+  bias: none
+  lora_alpha: 16
+  lora_dropout: 0.05
+  r: 8
+  task_type: CAUSAL_LM
+  target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+model:
+  model_id_or_path: Qwen/Qwen3-1.7B
+  template: qwen
+moe:
+  experts:
+  - description: Medical domain translation expert
+    name: medical
+    task_type: medical_translation
+  - description: English to Vietnamese translation expert
+    name: en_vi
+    task_type: en_vi_translation
+  - description: Vietnamese to English translation expert
+    name: vi_en
+    task_type: vi_en_translation
+  gating:
+    dropout: 0.1
+    hidden_size: 256
+    load_balancing_weight: 0.01
+  num_experts: 3
+tokenizer:
+  allow_whitespace_only_pieces: true
+  bos_id: 2
+  character_coverage: 0.995
+  eos_id: 3
+  input_sentence_size: 10000000
+  model_prefix: spm_model
+  model_type: unigram
+  pad_id: 0
+  split_by_number: true
+  split_by_unicode_script: true
+  split_by_whitespace: true
+  split_digits: true
+  treat_whitespace_as_suffix: false
+  type: sentencepiece
+  unk_id: 1
+  user_defined_symbols:
+  - <|im_start|>
+  - <|im_end|>
+  - <medical>
+  - <en_vi>
+  - <vi_en>
+  vocab_size: 32000
+training:
+  bf16: true
+  eval_steps: 5
+  eval_strategy: steps
+  fp16: false
+  gradient_accumulation_steps: 2
+  greater_is_better: false
+  label_names:
+  - labels
+  learning_rate: 2e-4
+  load_best_model_at_end: true
+  logging_dir: logs/moe_training
+  logging_steps: 5
+  max_steps: 30
+  metric_for_best_model: eval_loss
+  num_train_epochs: 1
+  output_dir: outputs/moe_model
+  per_device_eval_batch_size: 4
+  per_device_train_batch_size: 4
+  run_name: moe_medmt_run1
+  save_steps: 5
+  save_total_limit: 3
+  warmup_steps: 1
+  weight_decay: 0.01

@@ -2,9 +2,11 @@ import csv
 import json
 import os
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 def main():
-    csv_path = "../train_data/train_data.csv"
-    output_dir = "../data/processed"
+    csv_path = os.path.join(PROJECT_ROOT, "train_data", "train_data.csv")
+    output_dir = os.path.join(PROJECT_ROOT, "data", "processed")
     os.makedirs(output_dir, exist_ok=True)
 
     en_vi_jsonl = os.path.join(output_dir, "en_vi_train.jsonl")
@@ -57,7 +59,6 @@ def main():
     print(f"✅ Converted CSV to JSONL for MoE training.")
     print(f"EN-VI samples: {len(en_vi_samples)}")
     print(f"VI-EN samples: {len(vi_en_samples)}")
-    print(f"Combined samples: {len(en_vi_samples) + len(vi_en_samples)}")
 
 if __name__ == "__main__":
     main()
