@@ -4,4 +4,4 @@
 mkdir -p train_data
 
 # Download file from Google Drive using gdown
-gdown "https://drive.google.com/uc?id=1yApcgWxgPrXFx_wHbjEUAw9YJFSocwbV" -O vlsp_moe/train_data/train_data.csv
+gdown "https://drive.google.com/uc?id=1yApcgWxgPrXFx_wHbjEUAw9YJFSocwbV" -O train_data/train_data.csv

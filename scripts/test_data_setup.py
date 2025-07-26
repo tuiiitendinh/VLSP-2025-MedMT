@@ -5,12 +5,14 @@ Test script to verify data preparation works correctly.
 import os
 import sys
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 def test_data_preparation():
     """Test the data preparation process."""
     
     # Check if the main data files exist
-    en_file = "../data/train.en.txt"
-    vi_file = "../data/train.vi.txt"
+    en_file = os.path.join(PROJECT_ROOT, "data", "train.en.txt")
+    vi_file = os.path.join(PROJECT_ROOT, "data", "train.vi.txt")
     
     print("Testing data preparation...")
     
@@ -59,8 +61,8 @@ def show_usage():
     print("How to use your data with the MoE system:")
     print("="*50)
     print("1. Make sure your files are in the correct location:")
-    print("   - ../data/train.en.txt")
-    print("   - ../data/train.vi.txt")
+    print(f"   - {os.path.join(PROJECT_ROOT, 'data', 'train.en.txt')}")
+    print(f"   - {os.path.join(PROJECT_ROOT, 'data', 'train.vi.txt')}")
     print("")
     print("2. Run the data preparation script:")
     print("   python prepare_data.py")

@@ -8,16 +8,20 @@ from config import Config
 from train_moe import create_moe_model, MoEDataset
 import os
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+
 def test_moe_setup():
     """Test MoE model setup without full training."""
     print("🧪 Testing MoE Model Setup...")
     
     # Load config
-    config = Config("../configs/moe_config.yaml")
+    config = Config(os.path.join(PROJECT_ROOT, "configs", "moe_config.yaml"))
     print(f"✅ Config loaded - Device: {config.device}")
     
     # Test if data exists
     train_file = config.dataset["train_file"]
+    if not os.path.isabs(train_file):
+        train_file = os.path.join(PROJECT_ROOT, train_file)
     if not os.path.exists(train_file):
         print(f"❌ Training file not found: {train_file}")
         return False
@@ -30,7 +34,7 @@ def test_moe_setup():
             sample_lines = [f.readline() for _ in range(5)]
         
         # Create temporary test file
-        test_file = "../data/processed/test_sample.jsonl"
+        test_file = os.path.join(PROJECT_ROOT, "data", "processed", "test_sample.jsonl")
         with open(test_file, 'w', encoding='utf-8') as f:
             for line in sample_lines:
                 if line.strip():
@@ -57,9 +61,8 @@ def test_moe_setup():
         os.remove(test_file)
         
         return True
-        
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error loading dataset: {e}")
         return False
 
 def test_model_loading():
@@ -67,7 +70,7 @@ def test_model_loading():
     print("🤖 Testing Model Loading...")
     
     try:
-        config = Config("../configs/moe_config.yaml")
+        config = Config(os.path.join(PROJECT_ROOT, "configs", "moe_config.yaml"))
         
         # Test small model loading for speed
         from transformers import AutoTokenizer, AutoModelForCausalLM

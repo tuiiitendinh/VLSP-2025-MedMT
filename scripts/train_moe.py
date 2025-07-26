@@ -11,7 +11,8 @@ from transformers import (
 )
 from peft import LoraConfig, get_peft_model
 from config import Config
-from secret_loader import setup_wandb_quick
+from spm_tokenizer import SPMTokenizer, create_spm_tokenizer
+from spm_data_collator import SPMDataCollatorForLanguageModeling
 import json
 import logging
 import os
@@ -19,6 +20,16 @@ import os
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+# Auto-select device
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+    logger.info("Using GPU: %s", torch.cuda.get_device_name(DEVICE))
+else:
+    DEVICE = torch.device("cpu")
+    logger.info("Using CPU")
 
 
 class MoEGatingNetwork(nn.Module):
@@ -90,7 +101,13 @@ class MoEExpertRouter(nn.Module):
         else:
             # During inference, use gating network
             with torch.no_grad():
-                embeddings = self.model.get_input_embeddings()(input_ids)
+                # Handle both HuggingFace and SPM tokenizers
+                if hasattr(self.model, 'get_input_embeddings'):
+                    embeddings = self.model.get_input_embeddings()(input_ids)
+                else:
+                    # For models without get_input_embeddings, use embedding layer directly
+                    embeddings = self.model.model.embed_tokens(input_ids)
+                
                 pooled_embeddings = embeddings.mean(dim=1)
                 
                 if self.gating_network.gate[0].weight.device != pooled_embeddings.device:
@@ -209,14 +226,71 @@ def create_moe_model(config):
     """Create MoE model with multiple experts."""
     logger.info("Loading base model and tokenizer...")
 
-    # Load base model and tokenizer using standard transformers
-    model_name = config.model["model_id_or_path"]
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    # Check tokenizer type from config
+    tokenizer_config = getattr(config, 'tokenizer', {})
+    tokenizer_type = tokenizer_config.get('type', 'huggingface')
+    tokenizer_type = 'huggingface'
+    
+    if tokenizer_type == 'sentencepiece':
+        # Use SentencePiece tokenizer
+        logger.info("Using SentencePiece tokenizer")
+        
+        # Check if we have a pre-trained SPM model
+        model_prefix = tokenizer_config.get('model_prefix', 'spm_model')
+        spm_model_path = f"{model_prefix}.model"
+        
+        if os.path.exists(spm_model_path):
+            # Load existing SPM model
+            tokenizer = SPMTokenizer(model_path=spm_model_path, config=tokenizer_config)
+            logger.info(f"Loaded existing SentencePiece model from {spm_model_path}")
+        else:
+            # Need to train SPM model first
+            logger.info("Training new SentencePiece model...")
+            
+            # Prepare training data
+            from prepare_tokenizer_data import prepare_tokenizer_data
+            
+            # Get current directory for config
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            config_path = os.path.join(PROJECT_ROOT, "configs", "moe_config.yaml")
 
-    # Add special tokens if needed
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+            # Prepare data files
+            tokenizer_data_dir = os.path.join(PROJECT_ROOT, "tokenizer_data")
+            data_files = prepare_tokenizer_data(config_path, tokenizer_data_dir)
+            
+            if not data_files:
+                raise ValueError("Failed to prepare training data for SentencePiece tokenizer")
+            
+            # Train tokenizer
+            tokenizer = create_spm_tokenizer(
+                config=tokenizer_config,
+                data_files=data_files,
+                model_path=None
+            )
+            
+        # Load base model (we still use HuggingFace model architecture)
+        model_name = config.model["model_id_or_path"]
+        model = AutoModelForCausalLM.from_pretrained(model_name)
+        
+        # Resize model embeddings to match tokenizer vocab size
+        tokenizer_vocab_size = tokenizer.get_vocab_size()
+        model_vocab_size = model.config.vocab_size
+        
+        if tokenizer_vocab_size != model_vocab_size:
+            logger.info(f"Resizing model embeddings from {model_vocab_size} to {tokenizer_vocab_size}")
+            model.resize_token_embeddings(tokenizer_vocab_size)
+            
+    else:
+        # Use HuggingFace tokenizer (default)
+        logger.info("Using HuggingFace tokenizer")
+        model_name = config.model["model_id_or_path"]
+        print("Model name: ", model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForCausalLM.from_pretrained(model_name)
+        
+        # Add special tokens if needed
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
     # Apply LoRA to the base model
     lora_config = LoraConfig(**config.lora)
@@ -225,9 +299,9 @@ def create_moe_model(config):
     # Create MoE router after LoRA is applied
     moe_router = MoEExpertRouter(model, tokenizer, num_experts=3)
     
-    # Move MoE router to the same device as the model
-    device = next(model.parameters()).device
-    moe_router = moe_router.to(device)
+    # Move MoE router and model to the selected device
+    model = model.to(DEVICE)
+    moe_router = moe_router.to(DEVICE)
 
     logger.info("MoE model created successfully")
     return model, tokenizer, moe_router
@@ -236,28 +310,38 @@ def create_moe_model(config):
 def train_moe_model():
     """Main training function for MoE model."""
     logger.info("Starting MoE training...")
-    
-    # Setup W&B authentication
-    logger.info("Setting up Weights & Biases...")
-    try:
-        setup_wandb_quick(project_name="vlsp-medmt", disabled=False)
-    except Exception as e:
-        logger.warning(f"W&B setup failed: {e}. Continuing without W&B...")
-        os.environ["WANDB_DISABLED"] = "true"
-    
-    config = Config("../configs/moe_config.yaml")
+    config = Config(os.path.join(PROJECT_ROOT, "configs", "moe_config.yaml"))
 
     model, tokenizer, moe_router = create_moe_model(config)
 
     logger.info("Loading training dataset...")
-    train_dataset = MoEDataset(config.dataset["train_file"], tokenizer)
+    train_file = config.dataset["train_file"]
+    if not os.path.isabs(train_file):
+        train_file = os.path.join(PROJECT_ROOT, train_file)
+    train_dataset = MoEDataset(train_file, tokenizer)
     
     logger.info("Loading validation dataset...")
-    eval_dataset = MoEDataset(config.dataset["val_file"], tokenizer)
+    val_file = config.dataset["val_file"]
+    if not os.path.isabs(val_file):
+        val_file = os.path.join(PROJECT_ROOT, val_file)
+    eval_dataset = MoEDataset(val_file, tokenizer)
 
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer, mlm=False, pad_to_multiple_of=8  
-    )
+    # Create appropriate data collator based on tokenizer type
+    tokenizer_config = getattr(config, 'tokenizer', {})
+    tokenizer_type = tokenizer_config.get('type', 'huggingface')
+    
+    if tokenizer_type == 'sentencepiece':
+        data_collator = SPMDataCollatorForLanguageModeling(
+            tokenizer=tokenizer, 
+            mlm=False, 
+            pad_to_multiple_of=8
+        )
+    else:
+        data_collator = DataCollatorForLanguageModeling(
+            tokenizer=tokenizer, 
+            mlm=False, 
+            pad_to_multiple_of=8  
+        )
     
     training_config = config.training.copy()
     training_config["learning_rate"] = float(training_config["learning_rate"])
