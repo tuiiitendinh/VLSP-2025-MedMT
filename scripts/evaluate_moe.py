@@ -144,10 +144,13 @@ class MoEInference:
                 results['total_samples'] += 1
         
         return results
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 def main():
     parser = argparse.ArgumentParser(description="MoE Model Inference")
-    parser.add_argument("--model_path", type=str, required=True,
+    default_model_path = os.path.join(PROJECT_ROOT, "outputs", "moe_model")
+    parser.add_argument("--model_path", type=str, 
+                       default=default_model_path,
                        help="Path to the fine-tuned MoE model")
     parser.add_argument("--config_path", type=str, 
                        default=os.path.join(PROJECT_ROOT, "configs", "moe_config.yaml"),

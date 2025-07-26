@@ -44,7 +44,7 @@ python scripts/train_moe.py
 # Step 6: Evaluate the model (optional)
 echo "Step 6: Evaluating model..."
 if [ -f "data/processed/val.jsonl" ]; then
-    python scripts/evaluate_moe.py --model_path outputs/moe_model --interactive
+    python scripts/evaluate_moe.py --interactive
 else
     echo "Validation file not found. Skipping evaluation."
 fi
