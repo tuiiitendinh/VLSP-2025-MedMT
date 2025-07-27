@@ -11,7 +11,7 @@ echo "Starting MoE Model Training Pipeline..."
 
 # Step 1: Setup environment
 echo "Step 1: Setting up environment..."
-#pip install -r vlsp_moe/requirements.txt
+# pip install -r vlsp_moe/requirements.txt
 
 # Step 1.1: Train SentencePiece tokenizer (if using SPM)
 echo "Training SentencePiece tokenizer..."

@@ -2,14 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    Trainer,
-    TrainingArguments,
-    DataCollatorForLanguageModeling,
-)
-from peft import LoraConfig, get_peft_model
+from transformers import DataCollatorForLanguageModeling
 from config import Config
 from spm_tokenizer import SPMTokenizer, create_spm_tokenizer
 from spm_data_collator import SPMDataCollatorForLanguageModeling
@@ -67,17 +60,8 @@ class MoEExpertRouter(nn.Module):
         self.num_experts = num_experts
         self.expert_mapping = {"medical": 0, "en_vi": 1, "vi_en": 2}
 
-        # Create separate LoRA adapters for each expert
+        # Unsloth handles LoRA globally; no per-expert configs needed
         self.expert_adapters = {}
-        for expert_name, expert_id in self.expert_mapping.items():
-            lora_config = LoraConfig(
-                r=8,
-                lora_alpha=16,
-                lora_dropout=0.05,
-                bias="none",
-                task_type="CAUSAL_LM",
-            )
-            self.expert_adapters[expert_name] = lora_config
 
         # Initialize gating network
         # Use model's hidden size for gating
@@ -188,47 +172,7 @@ class MoEDataset(Dataset):
         }
 
 
-class MoETrainer(Trainer):
-    """Custom trainer for MoE model."""
 
-    def __init__(self, moe_router, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.moe_router = moe_router
-
-    def _move_model_to_device(self, model, device):
-        """Override to also move MoE router to device."""
-        model = super()._move_model_to_device(model, device)
-        if hasattr(self, 'moe_router') and self.moe_router is not None:
-            self.moe_router = self.moe_router.to(device)
-        return model
-
-    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-        """Compute loss with expert routing."""
-        expert_types = inputs.pop("expert_type", None)
-        expert_weights = self.moe_router.get_expert_weights(
-            inputs["input_ids"], expert_types
-        )
-        
-        outputs = model(**inputs)
-
-        loss = outputs.loss
-
-        if expert_weights is not None:
-            routing_loss = self.compute_routing_loss(expert_weights)
-            loss = loss + 0.01 * routing_loss 
-
-        return (loss, outputs) if return_outputs else loss
-
-    def compute_routing_loss(self, expert_weights):
-        """Compute routing loss to encourage sparsity."""
-        batch_size = expert_weights.size(0)
-        expert_usage = expert_weights.sum(dim=0)
-        target_usage = batch_size / self.moe_router.num_experts
-        load_loss = F.mse_loss(
-            expert_usage, torch.full_like(expert_usage, target_usage)
-        )
-
-        return load_loss
 
 
 def create_moe_model(config):
@@ -276,32 +220,33 @@ def create_moe_model(config):
                 model_path=None
             )
             
-        # Load base model (we still use HuggingFace model architecture)
-        model_name = config.model["model_id_or_path"]
-        model = AutoModelForCausalLM.from_pretrained(model_name)
-        
-        # Resize model embeddings to match tokenizer vocab size
-        tokenizer_vocab_size = tokenizer.get_vocab_size()
-        model_vocab_size = model.config.vocab_size
-        
-        if tokenizer_vocab_size != model_vocab_size:
-            logger.info(f"Resizing model embeddings from {model_vocab_size} to {tokenizer_vocab_size}")
-            model.resize_token_embeddings(tokenizer_vocab_size)
+        # Unsloth will handle model loading below
             
     else:
-        # Use HuggingFace tokenizer (default)
-        logger.info("Using HuggingFace tokenizer")
-        model_name = config.model["model_id_or_path"]
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForCausalLM.from_pretrained(model_name)
+        # Unsloth will handle model loading below
 
-        # Add special tokens if needed
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-
-    # Apply LoRA to the base model
-    lora_config = LoraConfig(**config.lora)
-    model = get_peft_model(model, lora_config)
+    # Use Unsloth to load model and tokenizer
+    from unsloth import FastLanguageModel
+    model_name = config.model["model_id_or_path"]
+    max_seq_length = config.data.get("max_length", 2048)
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name = model_name,
+        max_seq_length = max_seq_length,
+        dtype = "auto",
+        load_in_4bit = False,
+    )
+    # Apply LoRA using Unsloth
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r = config.lora["r"],
+        lora_alpha = config.lora["lora_alpha"],
+        lora_dropout = config.lora["lora_dropout"],
+        bias = config.lora["bias"],
+        task_type = config.lora["task_type"],
+    )
+    # bf16 support
+    if config.training.get("bf16", False):
+        model = model.to(dtype=torch.bfloat16)
 
     # Create MoE router after LoRA is applied
     moe_router = MoEExpertRouter(model, tokenizer, num_experts=3)
@@ -364,7 +309,7 @@ def train_moe_model():
     training_config["save_total_limit"] = int(training_config["save_total_limit"])
     training_config["num_train_epochs"] = int(training_config["num_train_epochs"])
     
-    training_args = TrainingArguments(**training_config)
+    # No TrainingArguments needed for Unsloth
     
     # Define a function to compute SacreBLEU
     def compute_bleu(eval_preds):
@@ -378,14 +323,16 @@ def train_moe_model():
         bleu = corpus_bleu(decoded_preds, decoded_labels)
         return {"bleu": bleu.score}
 
-    trainer = MoETrainer(
-        moe_router=moe_router,
+    # Unsloth SFTTrainer
+    from unsloth.trainer import SFTTrainer
+    trainer = SFTTrainer(
         model=model,
-        args=training_args,
-        data_collator=data_collator,
+        tokenizer=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        compute_metrics=compute_bleu,  # Add this line
+        args=training_config,
+        data_collator=data_collator,
+        compute_metrics=compute_bleu,
     )
 
     logger.info("Starting training...")
