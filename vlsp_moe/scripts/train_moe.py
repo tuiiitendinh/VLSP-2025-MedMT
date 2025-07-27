@@ -16,6 +16,7 @@ from spm_data_collator import SPMDataCollatorForLanguageModeling
 import json
 import logging
 import os
+from sacrebleu import corpus_bleu
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -121,15 +122,23 @@ class MoEExpertRouter(nn.Module):
 class MoEDataset(Dataset):
     """Dataset class for MoE training."""
 
-    def __init__(self, data_path: str, tokenizer):
+    def __init__(self, data_path: str, tokenizer, sample_rate: float = 0.55, seed: int = 42):
+        import random
         self.data = []
         self.tokenizer = tokenizer
 
         # Load data
+        # with open(data_path, "r", encoding="utf-8") as f:
+        #     for line in f:
+        #         item = json.loads(line.strip())
+        #         self.data.append(item)
+        
         with open(data_path, "r", encoding="utf-8") as f:
-            for line in f:
-                item = json.loads(line.strip())
-                self.data.append(item)
+            all_items = [json.loads(line.strip()) for line in f]
+        # Sample a subset of the data
+        random.seed(seed)
+        sample_size = int(len(all_items) * sample_rate)
+        self.data = random.sample(all_items, sample_size) if sample_size < len(all_items) else all_items
 
     def __len__(self):
         return len(self.data)
@@ -356,6 +365,19 @@ def train_moe_model():
     training_config["num_train_epochs"] = int(training_config["num_train_epochs"])
     
     training_args = TrainingArguments(**training_config)
+    
+    # Define a function to compute SacreBLEU
+    def compute_bleu(eval_preds):
+        predictions, labels = eval_preds
+        decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+        decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+
+        # SacreBLEU expects a list of references for each prediction
+        decoded_labels = [[label] for label in decoded_labels]
+
+        bleu = corpus_bleu(decoded_preds, decoded_labels)
+        return {"bleu": bleu.score}
+
     trainer = MoETrainer(
         moe_router=moe_router,
         model=model,
@@ -363,6 +385,7 @@ def train_moe_model():
         data_collator=data_collator,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        compute_metrics=compute_bleu,  # Add this line
     )
 
     logger.info("Starting training...")
