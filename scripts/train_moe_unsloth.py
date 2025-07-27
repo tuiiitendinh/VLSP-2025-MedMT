@@ -6,7 +6,7 @@ import json
 import logging
 import pandas as pd
 from datasets import Dataset
-from unsloth import FastLanguageModel
+from scripts.unslothsft import FastLanguageModel
 from trl import SFTTrainer, SFTConfig
 from config import Config
 from spm_tokenizer import SPMTokenizer, create_spm_tokenizer
@@ -32,14 +32,14 @@ else:
 class MoEGatingNetwork(nn.Module):
     """Gating network for MoE that routes inputs to appropriate experts."""
 
-    def __init__(self, input_size: int, num_experts: int, hidden_size: int = 256):
+    def __init__(self, input_size: int, num_experts: int, hidden_size: int = 256, dtype=torch.float32):
         super().__init__()
         self.num_experts = num_experts
         self.gate = nn.Sequential(
-            nn.Linear(input_size, hidden_size),
+            nn.Linear(input_size, hidden_size, dtype=dtype),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Linear(hidden_size, num_experts),
+            nn.Linear(hidden_size, num_experts, dtype=dtype),
             nn.Softmax(dim=-1),
         )
 
@@ -68,7 +68,11 @@ class MoEExpertRouter(nn.Module):
         hidden_size = (
             model.config.hidden_size if hasattr(model.config, "hidden_size") else 1024
         )
-        self.gating_network = MoEGatingNetwork(hidden_size, num_experts)
+        
+        # Detect model dtype
+        model_dtype = next(model.parameters()).dtype
+        
+        self.gating_network = MoEGatingNetwork(hidden_size, num_experts, dtype=model_dtype)
 
     def get_expert_weights(self, input_ids, expert_labels=None):
         """Get routing weights for experts."""
@@ -96,7 +100,7 @@ class MoEExpertRouter(nn.Module):
                 pooled_embeddings = embeddings.mean(dim=1)
                 
                 if self.gating_network.gate[0].weight.device != pooled_embeddings.device:
-                    self.gating_network = self.gating_network.to(pooled_embeddings.device)
+                    self.gating_network = self.gating_network.to(pooled_embeddings.device, dtype=pooled_embeddings.dtype)
                 
                 expert_weights = self.gating_network(pooled_embeddings)
 
@@ -209,7 +213,7 @@ def prepare_moe_dataset(data_path: str, tokenizer):
     combined_dataset = Dataset.from_pandas(pd.DataFrame(data))
     combined_dataset = combined_dataset.shuffle(seed=3407)
     
-    logger.info(f"Prepared {len(combined_dataset)} training samples")
+    logger.info(f"Prepared {len(combined_dataset)} samples")
     return combined_dataset
 
 
@@ -252,7 +256,10 @@ def create_unsloth_moe_model(config):
     
     # Create MoE router
     moe_router = MoEExpertRouter(model, tokenizer, num_experts=3)
-    moe_router = moe_router.to(DEVICE)
+    
+    # Move to device with correct dtype
+    model_dtype = next(model.parameters()).dtype
+    moe_router = moe_router.to(DEVICE, dtype=model_dtype)
     
     logger.info("Unsloth MoE model created successfully")
     return model, tokenizer, moe_router
@@ -308,7 +315,6 @@ def train_moe_unsloth():
         output_dir=training_config.get("output_dir", "./results"),
         save_steps=training_config.get("save_steps", 50),
         eval_steps=training_config.get("eval_steps", 50),
-        evaluation_strategy="steps",
         save_total_limit=training_config.get("save_total_limit", 2),
         report_to="none",  # Disable wandb for now
         remove_unused_columns=False,  # Keep all columns for MoE routing

@@ -40,7 +40,7 @@ moe:
     name: vi_en
     task_type: vi_en_translation
   gating:
-    dropout: 0.1
+    dropout: 0.2
     hidden_size: 256
     load_balancing_weight: 0.01
   num_experts: 3
@@ -68,8 +68,10 @@ tokenizer:
   - <vi_en>
   vocab_size: 32000
 training:
+  seed: 42
+  torch_compile: true
   bf16: true
-  eval_steps: 5
+  eval_steps: 20000
   eval_strategy: steps
   fp16: false
   gradient_accumulation_steps: 2
@@ -77,17 +79,19 @@ training:
   label_names:
   - labels
   learning_rate: 2e-4
-  load_best_model_at_end: true
+  lr_scheduler_type: "cosine"
   logging_dir: logs/moe_training
-  logging_steps: 5
-  max_steps: 30
+  logging_steps: 50
+  max_steps: -1
   metric_for_best_model: eval_loss
   num_train_epochs: 1
   output_dir: outputs/moe_model
-  per_device_eval_batch_size: 4
-  per_device_train_batch_size: 4
-  run_name: moe_medmt_run1
-  save_steps: 5
+  per_device_eval_batch_size: 32
+  per_device_train_batch_size: 32
+  run_name: moe_medmt_run_2707_sampling
+  save_steps: 20000
+  save_strategy: steps
   save_total_limit: 3
-  warmup_steps: 1
+  warmup_steps: 3000
   weight_decay: 0.01
+  load_best_model_at_end: true

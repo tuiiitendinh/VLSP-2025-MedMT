@@ -18,7 +18,7 @@ from spm_tokenizer import create_spm_tokenizer
 from prepare_tokenizer_data import prepare_tokenizer_data
 
 logger = logging.getLogger(__name__)
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 def train_tokenizer(config_path: str, output_dir: str, force_retrain: bool = False):
     """Train SentencePiece tokenizer from config."""

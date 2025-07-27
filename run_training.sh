@@ -13,10 +13,6 @@ echo "Starting MoE Model Training Pipeline..."
 # echo "Step 1: Setting up environment..."
 # pip install -r requirements.txt
 
-# Step 1.1: Train SentencePiece tokenizer (if using SPM)
-# echo "Training SentencePiece tokenizer..."
-# python scripts/train_tokenizer.py
-
 # Step 1.2: Convert CSV to parallel TXT for MoE training
 echo "Converting CSV to parallel TXT..."
 python scripts/csv_to_parallel_txt.py
@@ -37,14 +33,18 @@ mkdir -p data/processed
 echo "Step 4: Creating validation split..."
 python scripts/create_validation_split.py
 
+# Step 1.1: Train SentencePiece tokenizer (if using SPM)
+echo "Training SentencePiece tokenizer..."
+python scripts/train_tokenizer.py
+
 # Step 5: Train the MoE model
 echo "Step 5: Training MoE model..."
-python scripts/train_moe.py
+python scripts/train_moe_unsloth.py
 
 # Step 6: Evaluate the model (optional)
 echo "Step 6: Evaluating model..."
 if [ -f "data/processed/val.jsonl" ]; then
-    python scripts/evaluate_moe.py --interactive
+    python scripts/evaluate_moe.py
 else
     echo "Validation file not found. Skipping evaluation."
 fi
