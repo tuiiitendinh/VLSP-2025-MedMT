@@ -1,7 +1,7 @@
 import torch
 import json
 from config import Config
-from swift.llm import get_model_tokenizer, get_template
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 import argparse
 from typing import Dict
@@ -20,12 +20,29 @@ class MoEInference:
     def __init__(self, model_path: str, config_path: str):
         self.config = Config(config_path)
         self.model_path = model_path
-        self.model, self.tokenizer = get_model_tokenizer(
-            self.config.model["model_id_or_path"]
+        
+        # Load base model and tokenizer using transformers directly
+        base_model = self.config.model["model_id_or_path"]
+        logger.info(f"Loading base model: {base_model}")
+        
+        self.tokenizer = AutoTokenizer.from_pretrained(base_model)
+        model = AutoModelForCausalLM.from_pretrained(
+            base_model, 
+            torch_dtype=torch.float16, 
+            device_map="auto"
         )
-        self.model = PeftModel.from_pretrained(self.model, model_path)
-        self.model.eval()
-        self.template = get_template(self.config.model["template"], self.tokenizer)
+        
+        # Add padding token if not present
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        
+        # Load PEFT adapter
+        logger.info(f"Loading PEFT adapter from: {model_path}")
+        self.model = PeftModel.from_pretrained(model, model_path).eval()
+        
+        # Remove template loading since we're not using swift.llm anymore
+        # self.template = get_template(self.config.model["template"], self.tokenizer)
+        
         self.expert_mapping = {
             'medical': 0,
             'en_vi': 1,
@@ -33,6 +50,11 @@ class MoEInference:
         }
         
         logger.info("MoE model loaded successfully")
+    
+    def _format_prompt(self, text: str, task_desc: str) -> str:
+        """Format prompt for the model."""
+        # Simple prompt formatting (adjust based on your model's expected format)
+        return f"{task_desc}: {text}"
     
     def translate(self, text: str, source_lang: str, target_lang: str, 
                   domain: str = None, max_length: int = 512) -> str:
@@ -62,24 +84,17 @@ class MoEInference:
             expert_type = "en_vi"  
             task_desc = "Translate the following sentence"
         
-        messages = [
-            {
-                "role": "user",
-                "content": f"{task_desc}: {text}"
-            }
-        ]
+        # Format prompt
+        prompt = self._format_prompt(text, task_desc)
         
-        # Encode input
-        inputs = self.template.encode(messages)
-        input_ids = torch.tensor([inputs['input_ids']])
-        attention_mask = torch.tensor([inputs['attention_mask']])
+        # Tokenize input
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         
         # Generate translation
         with torch.no_grad():
             outputs = self.model.generate(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                max_length=max_length,
+                **inputs,
+                max_new_tokens=max_length,
                 num_beams=4,
                 temperature=0.7,
                 do_sample=True,
@@ -87,9 +102,12 @@ class MoEInference:
                 eos_token_id=self.tokenizer.eos_token_id
             )
         
+        # Decode output
         generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        if "assistant" in generated_text:
-            translation = generated_text.split("assistant")[-1].strip()
+        
+        # Extract translation (remove original prompt)
+        if prompt in generated_text:
+            translation = generated_text.replace(prompt, "").strip()
         else:
             translation = generated_text.strip()
         
@@ -144,14 +162,16 @@ class MoEInference:
                 results['total_samples'] += 1
         
         return results
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 def main():
     parser = argparse.ArgumentParser(description="MoE Model Inference")
+    
+    # Set default path to outputs/moe_model
     default_model_path = os.path.join(PROJECT_ROOT, "outputs", "moe_model")
+    
     parser.add_argument("--model_path", type=str, 
                        default=default_model_path,
-                       help="Path to the fine-tuned MoE model")
+                       help="Path to the fine-tuned MoE model (default: outputs/moe_model)")
     parser.add_argument("--config_path", type=str, 
                        default=os.path.join(PROJECT_ROOT, "configs", "moe_config.yaml"),
                        help="Path to the configuration file")
@@ -166,6 +186,14 @@ def main():
     
     args = parser.parse_args()
     
+    # Print the model path being used for clarity
+    print(f"Using model path: {args.model_path}")
+    
+    # Check if the model path exists
+    if not os.path.exists(args.model_path):
+        print(f"⚠️ Warning: Model path does not exist: {args.model_path}")
+        print("Make sure you have trained and saved a model to this location.")
+        return
     # Initialize inference
     inference = MoEInference(args.model_path, args.config_path)
     
