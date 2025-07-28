@@ -1,148 +1,95 @@
+# vlsp_moe/scripts/spm_data_collator.py
+
 import torch
-from dataclasses import dataclass
 from typing import Dict, List, Any, Optional
-from transformers.data.data_collator import DataCollatorMixin
 import logging
 
+# Thiết lập logger (tùy chọn nhưng là thói quen tốt)
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class DataCollatorForSPMLanguageModeling(DataCollatorMixin):
-    """
-    Data collator for SentencePiece causal language modeling.
-    """
-    
-    tokenizer: Any
-    mlm: bool = False  # Set to False for causal LM
-    mlm_probability: float = 0.15
-    pad_to_multiple_of: Optional[int] = None
-    tf_experimental_compile: bool = False
-    return_tensors: str = "pt"
-
-    def __post_init__(self):
-        if self.mlm and not hasattr(self.tokenizer, "mask_token"):
-            raise ValueError(
-                "This tokenizer does not have a mask token which is necessary for masked language modeling."
-            )
-
-    def torch_call(self, examples: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
-        # Handle the input features
-        batch = {}
-        
-        # Extract input_ids and attention_mask
-        input_ids = []
-        attention_mask = []
-        labels = []
-        expert_types = []
-        
-        for example in examples:
-            input_ids.append(example["input_ids"])
-            attention_mask.append(example["attention_mask"])
-            labels.append(example.get("labels", example["input_ids"]))
-            expert_types.append(example.get("expert_type", "general"))
-        
-        # Pad sequences to the same length
-        max_length = max(len(ids) for ids in input_ids)
-        
-        # Apply pad_to_multiple_of if specified
-        if self.pad_to_multiple_of is not None:
-            max_length = (
-                (max_length + self.pad_to_multiple_of - 1)
-                // self.pad_to_multiple_of
-                * self.pad_to_multiple_of
-            )
-        
-        # Pad input_ids
-        padded_input_ids = []
-        padded_attention_mask = []
-        padded_labels = []
-        
-        pad_token_id = getattr(self.tokenizer, 'pad_token_id', 0)
-        
-        for i in range(len(input_ids)):
-            current_length = len(input_ids[i])
-            pad_length = max_length - current_length
-            
-            # Pad input_ids
-            padded_ids = input_ids[i] + [pad_token_id] * pad_length
-            padded_input_ids.append(padded_ids)
-            
-            # Pad attention_mask
-            padded_mask = attention_mask[i] + [0] * pad_length
-            padded_attention_mask.append(padded_mask)
-            
-            # Pad labels
-            padded_label = labels[i] + [-100] * pad_length
-            padded_labels.append(padded_label)
-        
-        batch["input_ids"] = torch.tensor(padded_input_ids, dtype=torch.long)
-        batch["attention_mask"] = torch.tensor(padded_attention_mask, dtype=torch.long)
-        batch["labels"] = torch.tensor(padded_labels, dtype=torch.long)
-        batch["expert_type"] = expert_types
-        
-        return batch
-
-    def __call__(self, features: List[Dict[str, Any]], return_tensors=None) -> Dict[str, Any]:
-        if return_tensors is None:
-            return_tensors = self.return_tensors
-        
-        if return_tensors == "pt":
-            return self.torch_call(features)
-        else:
-            raise ValueError(f"Framework '{return_tensors}' not recognized!")
-
-
 class SPMDataCollatorForLanguageModeling:
-    """Simple data collator for SentencePiece language modeling."""
+    """
+    Data collator cho mô hình ngôn ngữ SentencePiece.
+    - Được thiết kế cho Causal Language Modeling (CLM).
+    - Tự động tạo 'attention_mask' từ 'input_ids' và padding token.
+    - Xử lý padding cho cả 'input_ids' và 'labels' một cách hiệu quả.
+    """
     
-    def __init__(self, tokenizer, mlm: bool = False, pad_to_multiple_of: Optional[int] = None):
+    def __init__(self, tokenizer: Any, mlm: bool = False, pad_to_multiple_of: Optional[int] = None):
+        """
+        Args:
+            tokenizer: Tokenizer được sử dụng (phải có thuộc tính 'pad_token_id' hoặc mặc định là 0).
+            mlm (bool): Được giữ lại để tương thích, nhưng không được sử dụng cho Causal LM.
+            pad_to_multiple_of (Optional[int]): Nếu được chỉ định, sẽ pad độ dài của batch đến bội số gần nhất của giá trị này.
+        """
         self.tokenizer = tokenizer
         self.mlm = mlm
         self.pad_to_multiple_of = pad_to_multiple_of
         
-    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
-        batch = {}
-        
-        # Extract features
-        input_ids = [f["input_ids"] for f in features]
-        attention_mask = [f["attention_mask"] for f in features] 
-        labels = [f.get("labels", f["input_ids"]) for f in features]
-        expert_types = [f.get("expert_type", "general") for f in features]
-        
-        # Get max length
-        max_length = max(len(ids) for ids in input_ids)
-        
-        # Apply pad_to_multiple_of
-        if self.pad_to_multiple_of is not None:
-            max_length = ((max_length + self.pad_to_multiple_of - 1) 
-                         // self.pad_to_multiple_of * self.pad_to_multiple_of)
-        
-        # Pad sequences
+    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Hàm xử lý một batch các features từ Dataset.
+
+        Args:
+            features: Một list các dictionary, mỗi dictionary là một sample từ MoEDataset.
+
+        Returns:
+            Một dictionary chứa các tensor đã được pad sẵn sàng cho model.
+        """
+        # Lấy pad_token_id từ tokenizer. Mặc định là 0 nếu không được định nghĩa.
         pad_token_id = getattr(self.tokenizer, 'pad_token_id', 0)
+
+        # Trích xuất các trường cần thiết từ list các features.
+        # Đây là những trường được trả về bởi __getitem__ của MoEDataset.
+        input_ids_list = [f["input_ids"] for f in features]
+        labels_list = [f["labels"] for f in features]
+        expert_types = [f.get("expert_type", "general") for f in features]
+
+        # Sử dụng hàm pad_sequence của PyTorch để padding hiệu quả.
+        # Nó sẽ tự động pad theo độ dài của item dài nhất trong batch.
+        input_ids = torch.nn.utils.rnn.pad_sequence(
+            [torch.tensor(x, dtype=torch.long) for x in input_ids_list],
+            batch_first=True,
+            padding_value=pad_token_id
+        )
         
-        padded_input_ids = []
-        padded_attention_mask = []
-        padded_labels = []
-        
-        for i in range(len(input_ids)):
-            pad_length = max_length - len(input_ids[i])
+        labels = torch.nn.utils.rnn.pad_sequence(
+            [torch.tensor(x, dtype=torch.long) for x in labels_list],
+            batch_first=True,
+            padding_value=-100  # -100 là giá trị chuẩn để Pytorch bỏ qua khi tính loss.
+        )
+
+        # ======================================================================
+        # SỬA LỖI QUAN TRỌNG: Tự động tạo `attention_mask`.
+        # Thay vì cố gắng đọc 'attention_mask' từ features (gây ra KeyError),
+        # chúng ta tạo ra nó bằng cách so sánh `input_ids` với `pad_token_id`.
+        # Mask sẽ có giá trị 1 cho các token thực và 0 cho các token padding.
+        # ======================================================================
+        attention_mask = (input_ids != pad_token_id).long()
+
+        # Nếu pad_to_multiple_of được chỉ định, thực hiện padding thêm một lần nữa
+        if self.pad_to_multiple_of is not None:
+            max_length = input_ids.shape[1]
+            new_max_length = ((max_length + self.pad_to_multiple_of - 1) 
+                              // self.pad_to_multiple_of * self.pad_to_multiple_of)
             
-            # Pad input_ids
-            padded_ids = input_ids[i] + [pad_token_id] * pad_length
-            padded_input_ids.append(padded_ids)
-            
-            # Pad attention_mask  
-            padded_mask = attention_mask[i] + [0] * pad_length
-            padded_attention_mask.append(padded_mask)
-            
-            # Pad labels
-            padded_label = labels[i] + [-100] * pad_length
-            padded_labels.append(padded_label)
-        
-        batch["input_ids"] = torch.tensor(padded_input_ids, dtype=torch.long)
-        batch["attention_mask"] = torch.tensor(padded_attention_mask, dtype=torch.long)
-        batch["labels"] = torch.tensor(padded_labels, dtype=torch.long)
-        batch["expert_type"] = expert_types
+            pad_length = new_max_length - max_length
+            if pad_length > 0:
+                # Pad cho input_ids
+                input_ids = F.pad(input_ids, (0, pad_length), "constant", pad_token_id)
+                # Pad cho attention_mask
+                attention_mask = F.pad(attention_mask, (0, pad_length), "constant", 0)
+                # Pad cho labels
+                labels = F.pad(labels, (0, pad_length), "constant", -100)
+
+        # Tạo batch cuối cùng để trả về cho trainer
+        batch = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "labels": labels,
+            # expert_type được trả về dưới dạng list, Trainer sẽ xử lý nó.
+            "expert_type": expert_types,
+        }
         
         return batch

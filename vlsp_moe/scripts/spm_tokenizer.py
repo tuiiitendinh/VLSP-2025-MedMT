@@ -64,7 +64,10 @@ class SPMTokenizer:
         logger.info(f"Training SentencePiece model with args: {' '.join(train_args)}")
         
         # Train the model
-        spm.SentencePieceTrainer.train(' '.join(train_args))
+        spm.SentencePieceTrainer.train(' '.join(train_args),
+                                        input_sentence_size=1000000,
+                                        shuffle_input_sentence=True,
+                                        verbose=True)
         
         # Load the trained model
         self.model_path = f"{model_prefix}.model"

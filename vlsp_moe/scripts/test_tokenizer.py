@@ -169,10 +169,15 @@ def test_special_tokens(tokenizer: SPMTokenizer):
 
 
 def compare_with_huggingface(tokenizer: SPMTokenizer, test_texts: List[str], model_name: str):
-    """Compare with HuggingFace tokenizer if available."""
+    """Compare with Unsloth tokenizer if available."""
     try:
-        from transformers import AutoTokenizer
-        hf_tokenizer = AutoTokenizer.from_pretrained(model_name)
+        from unsloth import FastLanguageModel
+        _, hf_tokenizer = FastLanguageModel.from_pretrained(
+            model_name = model_name,
+            max_seq_length = 2048,
+            dtype = "auto",
+            load_in_4bit = False,
+        )
         
         logger.info("=" * 60)
         logger.info("Comparison with HuggingFace Tokenizer")

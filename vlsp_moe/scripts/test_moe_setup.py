@@ -73,35 +73,19 @@ def test_model_loading():
         config = Config(os.path.join(PROJECT_ROOT, "configs", "moe_config.yaml"))
         
         # Test small model loading for speed
-        from transformers import AutoTokenizer, AutoModelForCausalLM
-        from peft import LoraConfig, get_peft_model, TaskType
-        
-        print("📥 Loading tokenizer...")
-        tokenizer = AutoTokenizer.from_pretrained(config.model["model_id_or_path"])
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        
-        print("📥 Loading model...")
-        model = AutoModelForCausalLM.from_pretrained(
-            config.model["model_id_or_path"],
-            torch_dtype=torch.float16,  
-            device_map="auto"
+        from unsloth import FastLanguageModel
+        print("📥 Loading tokenizer and model with Unsloth...")
+        model_name = config.model["model_id_or_path"]
+        max_seq_length = config.data.get("max_length", 2048)
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name = model_name,
+            max_seq_length = max_seq_length,
+            dtype = "auto",
+            load_in_4bit = False,
         )
-        
-        print("🔧 Applying LoRA...")
-        lora_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            r=config.lora["r"],
-            lora_alpha=config.lora["lora_alpha"],
-            lora_dropout=config.lora["lora_dropout"],
-            bias=config.lora["bias"]
-        )
-        model = get_peft_model(model, lora_config)
-        
-        print(f"✅ Model loaded successfully")
+        print(f"✅ Model and tokenizer loaded successfully")
         print(f"   Model parameters: {model.num_parameters():,}")
         print(f"   Trainable parameters: {model.num_parameters(only_trainable=True):,}")
-        
         return True
         
     except Exception as e:

@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset
-from transformers import DataCollatorForLanguageModeling
 from config import Config
 from spm_tokenizer import SPMTokenizer, create_spm_tokenizer
 from spm_data_collator import SPMDataCollatorForLanguageModeling
@@ -10,6 +9,13 @@ import json
 import logging
 import os
 from sacrebleu import corpus_bleu
+
+# Thêm các import cần thiết
+import unsloth
+from transformers import DataCollatorForLanguageModeling, TrainingArguments
+from peft import TaskType
+from unsloth import FastLanguageModel
+from unsloth.trainer import SFTTrainer
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -111,15 +117,9 @@ class MoEDataset(Dataset):
         self.data = []
         self.tokenizer = tokenizer
 
-        # Load data
-        # with open(data_path, "r", encoding="utf-8") as f:
-        #     for line in f:
-        #         item = json.loads(line.strip())
-        #         self.data.append(item)
-        
         with open(data_path, "r", encoding="utf-8") as f:
             all_items = [json.loads(line.strip()) for line in f]
-        # Sample a subset of the data
+        
         random.seed(seed)
         sample_size = int(len(all_items) * sample_rate)
         self.data = random.sample(all_items, sample_size) if sample_size < len(all_items) else all_items
@@ -144,14 +144,11 @@ class MoEDataset(Dataset):
             return_tensors=None,
         )
 
-        # For causal LM, input_ids and labels are the same
         input_ids = encoding["input_ids"]
         attention_mask = encoding["attention_mask"]
 
-        # Create labels (same as input_ids for causal LM)
         labels = input_ids.copy()
 
-        # Mask the source part in labels to only compute loss on target
         source_encoding = self.tokenizer(
             source_text,
             max_length=512,
@@ -161,7 +158,6 @@ class MoEDataset(Dataset):
         )
         source_len = len(source_encoding["input_ids"])
 
-        # Set labels for source tokens to -100 (ignored in loss)
         labels[:source_len] = [-100] * source_len
 
         return {
@@ -171,93 +167,72 @@ class MoEDataset(Dataset):
             "expert_type": expert_type,
         }
 
-
-
-
-
 def create_moe_model(config):
     """Create MoE model with multiple experts."""
     logger.info("Loading base model and tokenizer...")
 
-    # Check tokenizer type from config
     tokenizer_config = getattr(config, 'tokenizer', {})
     tokenizer_type = tokenizer_config.get('type', 'huggingface')
     
     if tokenizer_type == 'sentencepiece':
-        # Use SentencePiece tokenizer
         logger.info("Using SentencePiece tokenizer")
-        
-        # Check if we have a pre-trained SPM model
         model_prefix = tokenizer_config.get('model_prefix', 'spm_model')
         spm_model_path = f"{model_prefix}.model"
         
         if os.path.exists(spm_model_path):
-            # Load existing SPM model
             tokenizer = SPMTokenizer(model_path=spm_model_path, config=tokenizer_config)
             logger.info(f"Loaded existing SentencePiece model from {spm_model_path}")
         else:
-            # Need to train SPM model first
             logger.info("Training new SentencePiece model...")
-            
-            # Prepare training data
             from prepare_tokenizer_data import prepare_tokenizer_data
-            
-            # Get current directory for config
             current_dir = os.path.dirname(os.path.abspath(__file__))
             config_path = os.path.join(current_dir, "..", "configs", "moe_config.yaml")
-            
-            # Prepare data files
             tokenizer_data_dir = os.path.join(current_dir, "..", "tokenizer_data")
             data_files = prepare_tokenizer_data(config_path, tokenizer_data_dir)
-            
             if not data_files:
                 raise ValueError("Failed to prepare training data for SentencePiece tokenizer")
-            
-            # Train tokenizer
             tokenizer = create_spm_tokenizer(
                 config=tokenizer_config,
                 data_files=data_files,
                 model_path=None
             )
-            
-        # Unsloth will handle model loading below
-            
     else:
-        # Unsloth will handle model loading below
+        # Unsloth handles tokenizer loading with the model
+        pass
 
-    # Use Unsloth to load model and tokenizer
-    from unsloth import FastLanguageModel
     model_name = config.model["model_id_or_path"]
     max_seq_length = config.data.get("max_length", 2048)
+    
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name = model_name,
-        max_seq_length = max_seq_length,
-        dtype = "auto",
-        load_in_4bit = False,
+        model_name=model_name,
+        max_seq_length=max_seq_length,
+        dtype=None,
+        load_in_4bit=False,
     )
-    # Apply LoRA using Unsloth
+    
+    # SỬA LỖI: Xóa bỏ tham số `task_type` vì Unsloth sẽ tự động xác định nó.
     model = FastLanguageModel.get_peft_model(
         model,
-        r = config.lora["r"],
-        lora_alpha = config.lora["lora_alpha"],
-        lora_dropout = config.lora["lora_dropout"],
-        bias = config.lora["bias"],
-        task_type = config.lora["task_type"],
+        r=int(config.lora["r"]),
+        lora_alpha=int(config.lora["lora_alpha"]),
+        lora_dropout=float(config.lora["lora_dropout"]),
+        bias=config.lora["bias"],
+        target_modules=[
+            "q_proj", "k_proj", "v_proj", "o_proj",
+            "gate_proj", "up_proj", "down_proj",
+        ],
     )
-    # bf16 support
+
     if config.training.get("bf16", False):
         model = model.to(dtype=torch.bfloat16)
 
-    # Create MoE router after LoRA is applied
     moe_router = MoEExpertRouter(model, tokenizer, num_experts=3)
     
-    # Move MoE router and model to the selected device
     model = model.to(DEVICE)
     moe_router = moe_router.to(DEVICE)
 
     logger.info("MoE model created successfully")
     return model, tokenizer, moe_router
-
 
 def train_moe_model():
     """Main training function for MoE model."""
@@ -278,7 +253,6 @@ def train_moe_model():
         val_file = os.path.join(PROJECT_ROOT, val_file)
     eval_dataset = MoEDataset(val_file, tokenizer)
 
-    # Create appropriate data collator based on tokenizer type
     tokenizer_config = getattr(config, 'tokenizer', {})
     tokenizer_type = tokenizer_config.get('type', 'huggingface')
     
@@ -289,50 +263,52 @@ def train_moe_model():
             pad_to_multiple_of=8
         )
     else:
+        # SỬA LỖI: Đảm bảo import DataCollatorForLanguageModeling
         data_collator = DataCollatorForLanguageModeling(
             tokenizer=tokenizer, 
             mlm=False, 
             pad_to_multiple_of=8  
         )
     
-    training_config = config.training.copy()
-    training_config["learning_rate"] = float(training_config["learning_rate"])
-    training_config["weight_decay"] = float(training_config["weight_decay"])
-    training_config["warmup_steps"] = int(training_config["warmup_steps"])
-    training_config["max_steps"] = int(training_config["max_steps"])
-    training_config["logging_steps"] = int(training_config["logging_steps"])
-    training_config["save_steps"] = int(training_config["save_steps"])
-    training_config["eval_steps"] = int(training_config["eval_steps"])
-    training_config["per_device_train_batch_size"] = int(training_config["per_device_train_batch_size"])
-    training_config["per_device_eval_batch_size"] = int(training_config["per_device_eval_batch_size"])
-    training_config["gradient_accumulation_steps"] = int(training_config["gradient_accumulation_steps"])
-    training_config["save_total_limit"] = int(training_config["save_total_limit"])
-    training_config["num_train_epochs"] = int(training_config["num_train_epochs"])
+    # SỬA LỖI: Tạo đối tượng TrainingArguments từ dictionary config
+    training_args_dict = config.training.copy()
+    # Chuyển đổi kiểu dữ liệu cho các tham số cần thiết
+    training_args_dict["learning_rate"] = float(training_args_dict["learning_rate"])
+    training_args_dict["weight_decay"] = float(training_args_dict["weight_decay"])
+    training_args_dict["warmup_steps"] = int(training_args_dict["warmup_steps"])
+    training_args_dict["max_steps"] = int(training_args_dict["max_steps"])
+    training_args_dict["logging_steps"] = int(training_args_dict["logging_steps"])
+    training_args_dict["save_steps"] = int(training_args_dict["save_steps"])
+    training_args_dict["eval_steps"] = int(training_args_dict["eval_steps"])
+    training_args_dict["per_device_train_batch_size"] = int(training_args_dict["per_device_train_batch_size"])
+    training_args_dict["per_device_eval_batch_size"] = int(training_args_dict["per_device_eval_batch_size"])
+    training_args_dict["gradient_accumulation_steps"] = int(training_args_dict["gradient_accumulation_steps"])
+    training_args_dict["save_total_limit"] = int(training_args_dict["save_total_limit"])
+    training_args_dict["num_train_epochs"] = int(training_args_dict["num_train_epochs"])
     
-    # No TrainingArguments needed for Unsloth
-    
-    # Define a function to compute SacreBLEU
+    # Thêm output_dir nếu chưa có
+    if "output_dir" not in training_args_dict:
+        training_args_dict["output_dir"] = "./results"
+
+    training_args = TrainingArguments(**training_args_dict)
+
     def compute_bleu(eval_preds):
         predictions, labels = eval_preds
         decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
-
-        # SacreBLEU expects a list of references for each prediction
         decoded_labels = [[label] for label in decoded_labels]
-
         bleu = corpus_bleu(decoded_preds, decoded_labels)
         return {"bleu": bleu.score}
 
-    # Unsloth SFTTrainer
-    from unsloth.trainer import SFTTrainer
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        args=training_config,
+        args=training_args,  # SỬA LỖI: Truyền đối tượng TrainingArguments
         data_collator=data_collator,
         compute_metrics=compute_bleu,
+        max_seq_length=config.data.get("max_length", 2048), # Thêm max_seq_length
     )
 
     logger.info("Starting training...")

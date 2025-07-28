@@ -29,3 +29,4 @@ nltk>=3.8.0
 sentencepiece>=0.1.99
 sentence-transformers>=2.2.2
 sacrebleu
+charset_normalizer
