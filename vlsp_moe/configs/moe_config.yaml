@@ -14,7 +14,7 @@ device: cuda
 lora:
   bias: none
   lora_alpha: 16
-  lora_dropout: 0.00
+  lora_dropout: 0.1
   r: 8
   task_type: CAUSAL_LM
 model:
@@ -32,7 +32,7 @@ moe:
     name: vi_en
     task_type: vi_en_translation
   gating:
-    dropout: 0.2
+    dropout: 0.3
     hidden_size: 256
     load_balancing_weight: 0.01
   num_experts: 3
@@ -63,28 +63,27 @@ training:
   seed: 42
   torch_compile: true
   bf16: true
-  eval_steps: 20000
+  eval_steps: 7031
   eval_strategy: steps
   fp16: false
-  gradient_accumulation_steps: 2
-  greater_is_better: false
+  gradient_accumulation_steps: 4
+  greater_is_better: True
   label_names:
   - labels
-  learning_rate: 2e-4
+  learning_rate: 5e-3
   lr_scheduler_type: "cosine"
   load_best_model_at_end: true
   logging_dir: logs/moe_training
   logging_steps: 50
   max_steps: -1
-  metric_for_best_model: eval_loss
-  num_train_epochs: 3
+  metric_for_best_model: bleu
+  num_train_epochs: 2
   output_dir: outputs/moe_model
-  per_device_eval_batch_size: 16
-  per_device_train_batch_size: 14
-  run_name: moe_medmt_run_2807_unsloth
-  save_steps: 20000
+  per_device_eval_batch_size: 32
+  per_device_train_batch_size: 32
+  run_name: moe_medmt_run_2907_unsloth
+  save_steps: 7031
   save_strategy: steps
-  save_total_limit: 3
-  warmup_steps: 3000
-  weight_decay: 0.01
-  load_best_model_at_end: true
+  save_total_limit: 5
+  warmup_steps: 4000
+  weight_decay: 0.05

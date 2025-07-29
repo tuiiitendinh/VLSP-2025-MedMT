@@ -65,7 +65,7 @@ class SPMTokenizer:
         
         # Train the model
         spm.SentencePieceTrainer.train(' '.join(train_args),
-                                        input_sentence_size=1000000,
+                                        input_sentence_size=10000000,
                                         shuffle_input_sentence=True,
                                         verbose=True)
         

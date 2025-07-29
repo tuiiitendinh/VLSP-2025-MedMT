@@ -16,6 +16,7 @@ from transformers import DataCollatorForLanguageModeling, TrainingArguments
 from peft import TaskType
 from unsloth import FastLanguageModel
 from unsloth.trainer import SFTTrainer
+import wandb
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -25,8 +26,13 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 # Auto-select device
 if torch.cuda.is_available():
-    DEVICE = torch.device("cuda")
-    logger.info("Using GPU: %s", torch.cuda.get_device_name(DEVICE))
+    n_gpus = torch.cuda.device_count()
+    if n_gpus > 1:
+        DEVICE = torch.device("cuda")
+        logger.info(f"Using {n_gpus} GPUs: {[torch.cuda.get_device_name(i) for i in range(n_gpus)]}")
+    else:
+        DEVICE = torch.device("cuda")
+        logger.info("Using GPU: %s", torch.cuda.get_device_name(DEVICE))
 else:
     DEVICE = torch.device("cpu")
     logger.info("Using CPU")
@@ -112,7 +118,7 @@ class MoEExpertRouter(nn.Module):
 class MoEDataset(Dataset):
     """Dataset class for MoE training."""
 
-    def __init__(self, data_path: str, tokenizer, sample_rate: float = 0.55, seed: int = 42):
+    def __init__(self, data_path: str, tokenizer, sample_rate: float = 0.9, seed: int = 42):
         import random
         self.data = []
         self.tokenizer = tokenizer
@@ -172,43 +178,39 @@ def create_moe_model(config):
     logger.info("Loading base model and tokenizer...")
 
     tokenizer_config = getattr(config, 'tokenizer', {})
-    tokenizer_type = tokenizer_config.get('type', 'huggingface')
+    model_prefix = tokenizer_config.get('model_prefix', 'spm_model')
+    spm_model_path = f"{model_prefix}.model"
     
-    if tokenizer_type == 'sentencepiece':
-        logger.info("Using SentencePiece tokenizer")
-        model_prefix = tokenizer_config.get('model_prefix', 'spm_model')
-        spm_model_path = f"{model_prefix}.model"
-        
-        if os.path.exists(spm_model_path):
-            tokenizer = SPMTokenizer(model_path=spm_model_path, config=tokenizer_config)
-            logger.info(f"Loaded existing SentencePiece model from {spm_model_path}")
-        else:
-            logger.info("Training new SentencePiece model...")
-            from prepare_tokenizer_data import prepare_tokenizer_data
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            config_path = os.path.join(current_dir, "..", "configs", "moe_config.yaml")
-            tokenizer_data_dir = os.path.join(current_dir, "..", "tokenizer_data")
-            data_files = prepare_tokenizer_data(config_path, tokenizer_data_dir)
-            if not data_files:
-                raise ValueError("Failed to prepare training data for SentencePiece tokenizer")
-            tokenizer = create_spm_tokenizer(
-                config=tokenizer_config,
-                data_files=data_files,
-                model_path=None
-            )
+    if os.path.exists(spm_model_path):
+        custom_tokenizer = SPMTokenizer(model_path=spm_model_path, config=tokenizer_config)
+        logger.info(f"Loaded existing SentencePiece model from {spm_model_path}")
     else:
-        # Unsloth handles tokenizer loading with the model
-        pass
-
+        logger.info("Training new SentencePiece model...")
+        from prepare_tokenizer_data import prepare_tokenizer_data
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(current_dir, "..", "configs", "moe_config.yaml")
+        tokenizer_data_dir = os.path.join(current_dir, "..", "tokenizer_data")
+        data_files = prepare_tokenizer_data(config_path, tokenizer_data_dir)
+        if not data_files:
+            raise ValueError("Failed to prepare training data for SentencePiece tokenizer")
+        custom_tokenizer = create_spm_tokenizer(
+            config=tokenizer_config,
+            data_files=data_files,
+            model_path=None
+        )
+    
     model_name = config.model["model_id_or_path"]
     max_seq_length = config.data.get("max_length", 2048)
     
-    model, tokenizer = FastLanguageModel.from_pretrained(
+    # Always use custom_tokenizer
+    model, _ = FastLanguageModel.from_pretrained(
         model_name=model_name,
         max_seq_length=max_seq_length,
         dtype=None,
         load_in_4bit=False,
+        device_map="auto" if torch.cuda.is_available() and torch.cuda.device_count() > 1 else None,
     )
+    tokenizer = custom_tokenizer
     
     # SỬA LỖI: Xóa bỏ tham số `task_type` vì Unsloth sẽ tự động xác định nó.
     model = FastLanguageModel.get_peft_model(
@@ -235,9 +237,16 @@ def create_moe_model(config):
     return model, tokenizer, moe_router
 
 def train_moe_model():
+    # If using multiple GPUs, recommend launching with torchrun
+    if torch.cuda.is_available() and torch.cuda.device_count() > 1:
+        logger.info("Multi-GPU detected. Please launch with: torchrun --nproc_per_node=2 vlsp_moe/scripts/train_moe.py")
     """Main training function for MoE model."""
     logger.info("Starting MoE training...")
     config = Config(os.path.join(PROJECT_ROOT, "vlsp_moe", "configs", "moe_config.yaml"))
+
+    # Initialize wandb and log config
+    wandb.init(project="moe_medmt", name=config.training.get("run_name", "moe_run"))
+    wandb.config.update(config.__dict__, allow_val_change=True)
 
     model, tokenizer, moe_router = create_moe_model(config)
 
@@ -305,10 +314,12 @@ def train_moe_model():
         tokenizer=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        args=training_args,  # SỬA LỖI: Truyền đối tượng TrainingArguments
+        args=training_args,
         data_collator=data_collator,
         compute_metrics=compute_bleu,
-        max_seq_length=config.data.get("max_length", 2048), # Thêm max_seq_length
+        max_seq_length=config.data.get("max_length", 2048),
+        # device_map="auto" is recommended for multi-GPU
+        device_map="auto" if torch.cuda.is_available() and torch.cuda.device_count() > 1 else None,
     )
 
     logger.info("Starting training...")
