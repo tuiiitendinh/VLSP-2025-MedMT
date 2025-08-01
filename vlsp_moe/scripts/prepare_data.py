@@ -2,6 +2,9 @@ import json
 import os
 import random
 import re
+import shutil
+import sys
+import tempfile
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -208,4 +211,22 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Error handling for disk quota exceeded
+    try:
+        main()
+    except OSError as e:
+        if e.errno == 28:  # No space left on device
+            print("Error: Disk quota exceeded. Please free up some space and try again.")
+        else:
+            print(f"Error: {e.strerror}")
+            print("Unexpected error occurred. Exiting.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        print("Unexpected error occurred. Exiting.")
+        sys.exit(1)
+
+    # Redirect output to a temporary directory if needed
+    temp_dir = tempfile.gettempdir()
+    shutil.copy(os.path.join(PROJECT_ROOT, "data", "processed", "train.jsonl"), temp_dir)
+    print(f"Output redirected to temporary directory: {temp_dir}")

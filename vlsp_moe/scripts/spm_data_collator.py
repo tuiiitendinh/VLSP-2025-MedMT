@@ -1,12 +1,8 @@
-# vlsp_moe/scripts/spm_data_collator.py
-
 import torch
 from typing import Dict, List, Any, Optional
 import logging
 
-# Thiết lập logger (tùy chọn nhưng là thói quen tốt)
 logger = logging.getLogger(__name__)
-
 
 class SPMDataCollatorForLanguageModeling:
     """
@@ -60,12 +56,9 @@ class SPMDataCollatorForLanguageModeling:
             padding_value=-100  # -100 là giá trị chuẩn để Pytorch bỏ qua khi tính loss.
         )
 
-        # ======================================================================
-        # SỬA LỖI QUAN TRỌNG: Tự động tạo `attention_mask`.
         # Thay vì cố gắng đọc 'attention_mask' từ features (gây ra KeyError),
         # chúng ta tạo ra nó bằng cách so sánh `input_ids` với `pad_token_id`.
         # Mask sẽ có giá trị 1 cho các token thực và 0 cho các token padding.
-        # ======================================================================
         attention_mask = (input_ids != pad_token_id).long()
 
         # Nếu pad_to_multiple_of được chỉ định, thực hiện padding thêm một lần nữa
@@ -83,7 +76,6 @@ class SPMDataCollatorForLanguageModeling:
                 # Pad cho labels
                 labels = F.pad(labels, (0, pad_length), "constant", -100)
 
-        # Tạo batch cuối cùng để trả về cho trainer
         batch = {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
