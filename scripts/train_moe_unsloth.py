@@ -6,7 +6,7 @@ import json
 import logging
 import pandas as pd
 from datasets import Dataset
-from scripts.unslothsft import FastLanguageModel
+from unsloth import FastLanguageModel
 from trl import SFTTrainer, SFTConfig
 from config import Config
 from spm_tokenizer import SPMTokenizer, create_spm_tokenizer
