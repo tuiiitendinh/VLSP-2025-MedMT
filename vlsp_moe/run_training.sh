@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-export MY_SCRATCH_DIR="/scratch/users/sutd/1010047/VLSP-2025-MedMT"
+export MY_SCRATCH_DIR="/scratch/users/sutd/1010042/VLSP-2025-MedMT"
 
 export DATA_DIR="${MY_SCRATCH_DIR}/VLSP-2025-MedMT/data"
 export CACHE_DIR="${MY_SCRATCH_DIR}/VLSP-2025-MedMT/cache"
@@ -45,31 +45,31 @@ cd "$SCRIPT_DIR/.."
 echo "Step 1.1: Training SentencePiece tokenizer..."
 # NOTE: The output directory is now pointed to your scratch data directory
 python vlsp_moe/scripts/train_tokenizer.py \
-    --config /home/users/sutd/1010047/VLSP-2025-MedMT/vlsp_moe/configs/moe_config.yaml \
+    --config /home/users/sutd/1010042/VLSP-2025-MedMT/vlsp_moe/configs/moe_config.yaml \
     --output_dir "$DATA_DIR/tokenizer"
 
 
 echo "Step 1.2: Converting CSV to parallel TXT..."
 # NOTE: We tell the script to save its output to the scratch data directory
-python /home/users/sutd/1010047/VLSP-2025-MedMT/vlsp_moe/scripts/csv_to_parallel_txt.py \
+python /home/users/sutd/1010042/VLSP-2025-MedMT/vlsp_moe/scripts/csv_to_parallel_txt.py \
     --output_dir "$DATA_DIR"
 
 
 # NOTE: These scripts must also be modified to accept --input_dir and --output_dir arguments
 # similar to the other scripts to work correctly in this pipeline.
 echo "Step 1.3: Converting CSV to JSONL..."
-python /home/users/sutd/1010047/VLSP-2025-MedMT/vlsp_moe/scripts/convert_csv_to_jsonl.py \
+python /home/users/sutd/1010042/VLSP-2025-MedMT/vlsp_moe/scripts/convert_csv_to_jsonl.py \
     --output_dir "$DATA_DIR/processed"
 
 
 echo "Step 2: Preparing data for all experts..."
-python /home/users/sutd/1010047/VLSP-2025-MedMT/vlsp_moe/scripts/prepare_data.py \
+python /home/users/sutd/1010042/VLSP-2025-MedMT/vlsp_moe/scripts/prepare_data.py \
     --input_dir "$DATA_DIR" \
     --output_dir "$DATA_DIR/processed"
 
 
 echo "Step 4: Creating validation split..."
-python /home/users/sutd/1010047/VLSP-2025-MedMT/vlsp_moe/scripts/create_validation_split.py \
+python /home/users/sutd/1010042/VLSP-2025-MedMT/vlsp_moe/scripts/create_validation_split.py \
     --data_dir "$DATA_DIR/processed"
 
 
@@ -80,12 +80,12 @@ echo "!!   logging_dir: ${LOGS_DIR}/moe_training"
 
 
 echo "Step 5: Training MoE model..."
-python /home/users/sutd/1010047/VLSP-2025-MedMT/vlsp_moe/scripts/train_moe.py
+python /home/users/sutd/1010042/VLSP-2025-MedMT/vlsp_moe/scripts/train_moe.py
 
 # The evaluate script will read the model path from the config file's output_dir
 echo "Step 6: Evaluating model..."
 if [ -f "${DATA_DIR}/processed/val.jsonl" ]; then
-    python /home/users/sutd/1010047/VLSP-2025-MedMT/vlsp_moe/scripts/evaluate_moe.py \
+    python /home/users/sutd/1010042/VLSP-2025-MedMT/vlsp_moe/scripts/evaluate_moe.py \
         --model_path "${OUTPUT_DIR}/moe_model_best" --interactive
 else
     echo "Validation file not found in scratch directory. Skipping evaluation."

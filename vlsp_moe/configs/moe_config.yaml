@@ -1,6 +1,6 @@
 id: &id 1010042
-base_home: &base_home /home/users/sutd/1010047
-base_scratch: &base_scratch /scratch/users/sutd/1010047
+base_home: &base_home /home/users/sutd/1010042
+base_scratch: &base_scratch /scratch/users/sutd/1010042
 
 data:
   max_length: 2048
