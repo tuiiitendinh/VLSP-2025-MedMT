@@ -27,4 +27,3 @@ charset_normalizer
 blis==1.2.0
 typing-extensions==4.12.2
 triton==3.2.0
-torch==2.6.0
