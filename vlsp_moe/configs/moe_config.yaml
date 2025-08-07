@@ -21,8 +21,13 @@ lora:
 model:
   model_id_or_path: Qwen/Qwen3-1.7B
   template: qwen
+  medical_model_name: "prithivMLmods/Sculptor-Qwen3_Med-Reasoning"
 moe:
   experts:
+  - description: Medical reasoning expert (prior model)
+    name: medical_reasoning
+    task_type: medical_reasoning
+    model_type: prior_expert
   - description: Medical domain translation expert
     name: medical
     task_type: medical_translation
@@ -36,7 +41,8 @@ moe:
     dropout: 0.3
     hidden_size: 256
     load_balancing_weight: 0.01
-  num_experts: 3
+  num_experts: 4
+  routing_strategy: content_based
 tokenizer:
   allow_whitespace_only_pieces: true
   bos_id: 2
