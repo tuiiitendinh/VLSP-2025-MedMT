@@ -46,7 +46,7 @@ class MoEInference:
         # Generate translation
         outputs = self.model.generate(
             **inputs,
-            max_new_tokens=256,
+            max_new_tokens=2048,
             num_beams=1,
             pad_token_id=self.tokenizer.pad_token_id,
             eos_token_id=self.tokenizer.eos_token_id

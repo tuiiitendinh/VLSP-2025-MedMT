@@ -28,7 +28,7 @@ def infer(model, tokenizer, input_file, output_file):
     with open(output_file, "w", encoding="utf-8") as outf:
         for sentence in input_sentences:
             inputs = tokenizer(sentence, return_tensors="pt", padding=True, truncation=True).to(model.device)
-            outputs = model.generate(**inputs, max_new_tokens=256, num_beams=1)
+            outputs = model.generate(**inputs, max_new_tokens=2048, num_beams=1)
             decoded_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
             outf.write(decoded_output + "\n")
 
