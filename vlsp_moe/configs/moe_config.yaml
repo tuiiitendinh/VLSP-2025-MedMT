@@ -1,97 +1,111 @@
 data:
   max_length: 2048
-  num_proc: 2
+  num_proc: 4
+  target_path: data/train.vi.txt
+  train_path: data/train.en.txt
+  tokenized: data/tokenized
   validation_subset_size: 10000
-  target_path: ./home/users/sutd/1010047/VLSP-2025-MedMT/data/train.vi.txt
-  tokenized: ./home/users/sutd/1010047/VLSP-2025-MedMT/data/tokenized
-  train_path: /home/users/sutd/1010047/VLSP-2025-MedMT/data/train.en.txt
+
 dataset:
-  en_vi_file: /home/users/sutd/1010047/VLSP-2025-MedMT/data/processed/en_vi_train.jsonl
-  medical_file: /home/users/sutd/1010047/VLSP-2025-MedMT/data/processed/medical_train.jsonl
-  train_file: /home/users/sutd/1010047/VLSP-2025-MedMT/data/processed/train.jsonl
-  val_file: /home/users/sutd/1010047/VLSP-2025-MedMT/data/processed/val.jsonl
-  vi_en_file: /home/users/sutd/1010047/VLSP-2025-MedMT/data/processed/vi_en_train.jsonl
+  en_vi_file: data/processed/en_vi_train.jsonl
+  medical_file: data/processed/medical_train.jsonl
+  train_file: data/processed/train.jsonl
+  val_file: data/processed/val.jsonl
+  vi_en_file: data/processed/vi_en_train.jsonl
+
 device: cuda
-lora:
-  bias: none
-  lora_alpha: 16
-  lora_dropout: 0.0
-  r: 8
-  task_type: CAUSAL_LM
+
 model:
   model_id_or_path: Qwen/Qwen3-1.7B
   template: qwen
-  medical_model_name: "prithivMLmods/Sculptor-Qwen3_Med-Reasoning"
+  _name_or_path: Qwen/Qwen3-1.7B
+  model_type: qwen
+  architectures: ["QwenForCausalLM"]
+  torch_dtype: auto
+
+lora:
+  r: 8
+  lora_alpha: 16
+  lora_dropout: 0.0
+  bias: none
+  task_type: CAUSAL_LM
+
 moe:
-  experts:
-  - description: Medical reasoning expert (prior model)
-    name: medical_reasoning
-    task_type: medical_reasoning
-    model_type: prior_expert
-  - description: Medical domain translation expert
-    name: medical
-    task_type: medical_translation
-  - description: English to Vietnamese translation expert
-    name: en_vi
-    task_type: en_vi_translation
-  - description: Vietnamese to English translation expert
-    name: vi_en
-    task_type: vi_en_translation
+  num_experts: 3
   gating:
-    dropout: 0.3
     hidden_size: 256
+    dropout: 0.3
     load_balancing_weight: 0.01
-  num_experts: 4
-  routing_strategy: content_based
+  experts:
+    - name: medical
+      description: "Medical domain translation expert"
+      task_type: medical_translation
+    - name: en_vi
+      description: "English to Vietnamese translation expert"
+      task_type: en_vi_translation
+    - name: vi_en
+      description: "Vietnamese to English translation expert"
+      task_type: vi_en_translation
+
+training:
+  report_to: wandb
+  output_dir: outputs/moe_0908_model_best
+  logging_dir: logs/moe_training
+  run_name: moe_medmt_run_0908_unsloth
+
+  # Training hyperparameters
+  per_device_train_batch_size: 20
+  per_device_eval_batch_size: 8
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-4
+  lr_scheduler_type: cosine
+  warmup_steps: 3400
+  weight_decay: 0.05
+  max_steps: -1
+  num_train_epochs: 2
+
+  eval_strategy: steps
+  eval_steps: 8437
+  save_strategy: steps
+  save_steps: 8437
+  save_total_limit: 5
+  load_best_model_at_end: true
+  metric_for_best_model: eval_bleu
+  greater_is_better: true
+  label_names: [ "labels" ]
+
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true
+  torch_compile: true
+  dataloader_pin_memory: true  # Changed to true for faster data loading
+  dataloader_num_workers: 8    # Increased workers for faster data loading
+  eval_accumulation_steps: 4   # Accumulate eval batches to reduce GPU-CPU transfers
+  remove_unused_columns: false
+
+  seed: 42
+  logging_steps: 50
+
 tokenizer:
-  allow_whitespace_only_pieces: true
-  bos_id: 2
-  character_coverage: 0.995
-  eos_id: 3
-  input_sentence_size: 10000000
-  model_prefix: spm_model
+  type: sentencepiece
   model_type: unigram
-  pad_id: 0
-  split_by_number: true
+  vocab_size: 32000
+  model_prefix: spm_model
+  character_coverage: 0.995
+  input_sentence_size: 10000000
+  user_defined_symbols:
+    - '<|im_start|>'
+    - '<|im_end|>'
+    - '<medical>'
+    - '<en_vi>'
+    - '<vi_en>'
+  allow_whitespace_only_pieces: true
   split_by_unicode_script: true
+  split_by_number: true
   split_by_whitespace: true
   split_digits: true
   treat_whitespace_as_suffix: false
-  type: sentencepiece
+  pad_id: 0
   unk_id: 1
-  user_defined_symbols:
-  - <|im_start|>
-  - <|im_end|>
-  - <medical>
-  - <en_vi>
-  - <vi_en>
-  vocab_size: 32000
-training:
-  seed: 42
-  torch_compile: true
-  bf16: true
-  eval_steps: 6151
-  eval_strategy: steps
-  fp16: false
-  gradient_accumulation_steps: 4
-  greater_is_better: True
-  label_names:
-  - labels
-  learning_rate: 2e-4
-  lr_scheduler_type: "cosine"
-  load_best_model_at_end: true
-  logging_dir: /scratch/users/sutd/1010047/logs/moe_training
-  logging_steps: 50
-  max_steps: -1
-  metric_for_best_model: bleu
-  num_train_epochs: 2
-  output_dir: /scratch/users/sutd/1010047/outputs/moe_model
-  per_device_eval_batch_size: 1
-  per_device_train_batch_size: 20
-  gradient_checkpointing: true
-  run_name: moe_medmt_run_0108_unsloth
-  save_steps: 6151
-  save_strategy: steps
-  save_total_limit: 5
-  warmup_steps: 2460
-  weight_decay: 0.05
+  bos_id: 2
+  eos_id: 3

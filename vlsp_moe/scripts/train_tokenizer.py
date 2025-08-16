@@ -20,7 +20,7 @@ from prepare_tokenizer_data import prepare_tokenizer_data
 logger = logging.getLogger(__name__)
 
 
-def train_tokenizer(config_path: str, output_dir: str, force_retrain: bool = False):
+def train_tokenizer(config_path: str, output_dir: str, training_text_file: str = None, force_retrain: bool = False):
     """Train SentencePiece tokenizer from config."""
     
     # Load config
@@ -44,8 +44,11 @@ def train_tokenizer(config_path: str, output_dir: str, force_retrain: bool = Fal
     
     # Prepare training data
     logger.info("Preparing training data...")
-    tokenizer_data_dir = os.path.join(output_dir, "training_data")
-    data_files = prepare_tokenizer_data(config_path, tokenizer_data_dir)
+    if training_text_file:
+        data_files = [training_text_file]
+    else:
+        tokenizer_data_dir = os.path.join(output_dir, "training_data")
+        data_files = prepare_tokenizer_data(config_path, tokenizer_data_dir)
     
     if not data_files:
         logger.error("Failed to prepare training data")
@@ -98,6 +101,8 @@ def main():
     parser.add_argument("--output_dir", type=str, 
                        default="../tokenizer_output",
                        help="Output directory for trained tokenizer")
+    parser.add_argument("--training_text_file", type=str, 
+                       help="Path to training text file for tokenizer")
     parser.add_argument("--force", action="store_true",
                        help="Force retrain even if model exists")
     parser.add_argument("--verbose", "-v", action="store_true", 
@@ -133,7 +138,7 @@ def main():
         return 1
     
     try:
-        success = train_tokenizer(args.config, args.output_dir, args.force)
+        success = train_tokenizer(args.config, args.output_dir, args.training_text_file, args.force)
         if success:
             logger.info("🎉 Tokenizer training completed successfully!")
             return 0
