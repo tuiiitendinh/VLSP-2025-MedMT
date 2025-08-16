@@ -132,7 +132,24 @@ python evaluate_moe.py --model_path outputs/moe_model --interactive
 python evaluate_moe.py --model_path outputs/moe_model --test_file data/processed/val.jsonl
 ```
 
-### Programmatic Usage
+### Programmatic Usage with Modular Script
+```python
+from moe_inference_modular import MoEInference
+
+# Initialize model
+inference = MoEInference("outputs/moe_model", "configs/moe_config.yaml")
+
+# Translate text
+translation = inference.translate(
+    text="Hello world",
+    source_lang="en",
+    target_lang="vi",
+    domain=None  # or "medical" for medical domain
+)
+print("Translated text:", translation)
+```
+
+### Programmatic Usage with Evaluate Script
 ```python
 from evaluate_moe import MoEInference
 
@@ -146,6 +163,7 @@ translation = inference.translate(
     target_lang="vi",
     domain=None  # or "medical" for medical domain
 )
+print("Translated text:", translation)
 ```
 
 ## Customization

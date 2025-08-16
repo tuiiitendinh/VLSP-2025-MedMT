@@ -8,16 +8,20 @@ from config import Config
 from train_moe import create_moe_model, MoEDataset
 import os
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+
 def test_moe_setup():
     """Test MoE model setup without full training."""
     print("🧪 Testing MoE Model Setup...")
     
     # Load config
-    config = Config("../configs/moe_config.yaml")
+    config = Config(os.path.join(PROJECT_ROOT, "configs", "moe_config.yaml"))
     print(f"✅ Config loaded - Device: {config.device}")
     
     # Test if data exists
     train_file = config.dataset["train_file"]
+    if not os.path.isabs(train_file):
+        train_file = os.path.join(PROJECT_ROOT, train_file)
     if not os.path.exists(train_file):
         print(f"❌ Training file not found: {train_file}")
         return False
@@ -30,7 +34,7 @@ def test_moe_setup():
             sample_lines = [f.readline() for _ in range(5)]
         
         # Create temporary test file
-        test_file = "../data/processed/test_sample.jsonl"
+        test_file = os.path.join(PROJECT_ROOT, "data", "processed", "test_sample.jsonl")
         with open(test_file, 'w', encoding='utf-8') as f:
             for line in sample_lines:
                 if line.strip():
@@ -57,9 +61,8 @@ def test_moe_setup():
         os.remove(test_file)
         
         return True
-        
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error loading dataset: {e}")
         return False
 
 def test_model_loading():
@@ -67,38 +70,22 @@ def test_model_loading():
     print("🤖 Testing Model Loading...")
     
     try:
-        config = Config("../configs/moe_config.yaml")
+        config = Config(os.path.join(PROJECT_ROOT, "configs", "moe_config.yaml"))
         
         # Test small model loading for speed
-        from transformers import AutoTokenizer, AutoModelForCausalLM
-        from peft import LoraConfig, get_peft_model, TaskType
-        
-        print("📥 Loading tokenizer...")
-        tokenizer = AutoTokenizer.from_pretrained(config.model["model_id_or_path"])
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        
-        print("📥 Loading model...")
-        model = AutoModelForCausalLM.from_pretrained(
-            config.model["model_id_or_path"],
-            torch_dtype=torch.float16,  
-            device_map="auto"
+        from unsloth import FastLanguageModel
+        print("📥 Loading tokenizer and model with Unsloth...")
+        model_name = config.model["model_id_or_path"]
+        max_seq_length = config.data.get("max_length", 2048)
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name = model_name,
+            max_seq_length = max_seq_length,
+            dtype = "auto",
+            load_in_4bit = False,
         )
-        
-        print("🔧 Applying LoRA...")
-        lora_config = LoraConfig(
-            task_type=TaskType.CAUSAL_LM,
-            r=config.lora["r"],
-            lora_alpha=config.lora["lora_alpha"],
-            lora_dropout=config.lora["lora_dropout"],
-            bias=config.lora["bias"]
-        )
-        model = get_peft_model(model, lora_config)
-        
-        print(f"✅ Model loaded successfully")
+        print(f"✅ Model and tokenizer loaded successfully")
         print(f"   Model parameters: {model.num_parameters():,}")
         print(f"   Trainable parameters: {model.num_parameters(only_trainable=True):,}")
-        
         return True
         
     except Exception as e:
