@@ -1,7 +1,8 @@
 import torch
 import os
 import logging
-from swift.llm import get_model_tokenizer, get_template
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from swift.llm import get_template
 from peft import PeftModel
 from config import Config
 
@@ -22,7 +23,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 # Define paths
 MODEL_PATH = "/home/users/sutd/1010042/VLSP-2025-MedMT/checkpoint-33750/"
-CONFIG_PATH = os.path.join(PROJECT_ROOT, "configs", "moe_config.yaml")
+CONFIG_PATH = os.path.join(PROJECT_ROOT, "vlsp_moe", "configs", "moe_config.yaml")
 INPUT_FILE = "/home/users/sutd/1010042/VLSP-2025-MedMT/test_data/test.en.txt"  # File containing input sentences
 OUTPUT_FILE = "/home/users/sutd/1010042/VLSP-2025-MedMT/test_data_output/test.vi.txt"  # File to save the inference results
 
@@ -61,11 +62,13 @@ def load_model_and_tokenizer(model_path, config_path):
     # Load configuration
     config = Config(config_path)
     
-    # Load base model and tokenizer using Swift
-    model, tokenizer = get_model_tokenizer(
-        config.model["model_id_or_path"]
-    )
-    
+    # # Load base model and tokenizer using Swift
+    # model, tokenizer = get_model_tokenizer(
+    #     config.model["model_id_or_path"]
+    # )
+    model = AutoModelForCausalLM.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+
     # Configure tokenizer properly for decoder-only generation
     tokenizer = configure_tokenizer_for_generation(tokenizer)
     
