@@ -1,18 +1,18 @@
+import unsloth
 import torch
 import json
 import os
 from config import Config
-from swift.llm import get_model_tokenizer, get_template
 from peft import PeftModel
 import argparse
 from typing import Dict
 import logging
+from transformers import AutoTokenizer, AutoModelForCausalLM
+# Import transformers after setting environment variable
+import transformers
 
 # Set environment variable to force left padding for all tokenizers
 os.environ["TOKENIZERS_PADDING_SIDE"] = "left"
-
-# Import transformers after setting environment variable
-import transformers
 
 # Configure transformers logging to reduce noise
 transformers.logging.set_verbosity_error()
@@ -56,15 +56,18 @@ class MoEInference:
     def __init__(self, model_path: str, config_path: str):
         self.config = Config(config_path)
         self.model_path = model_path
-        self.model, self.tokenizer = get_model_tokenizer(
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.config.model["model_id_or_path"]
+        )
+        self.model = PeftModel.from_pretrained(self.model, model_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(
             self.config.model["model_id_or_path"]
         )
         # Configure tokenizer properly for decoder-only generation
         self.tokenizer = configure_tokenizer_for_generation(self.tokenizer)
         
-        self.model = PeftModel.from_pretrained(self.model, model_path)
         self.model.eval()
-        self.template = get_template(self.config.model["template"], self.tokenizer)
+        self.template = self.config.model["template"]
         self.expert_mapping = {
             'medical': 0,
             'en_vi': 1,
@@ -74,7 +77,7 @@ class MoEInference:
         logger.info("MoE model loaded successfully")
     
     def translate(self, text: str, source_lang: str, target_lang: str, 
-                  domain: str = None, max_length: int = 512) -> str:
+                  domain: str = None, max_length: int = 2048) -> str:
         """
         Translate text using the MoE model.
         
@@ -118,7 +121,7 @@ class MoEInference:
             outputs = self.model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                max_new_tokens=min(128, max_length//2),  # Reduced for faster inference
+                max_new_tokens=2048,
                 num_beams=1,  # Greedy decoding for speed
                 do_sample=False,  # Deterministic for consistent results
                 use_cache=True,  # Enable KV cache

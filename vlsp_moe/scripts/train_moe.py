@@ -1,3 +1,4 @@
+import unsloth
 import torch
 import torch.nn as nn
 from config import Config
@@ -6,12 +7,10 @@ import logging
 import os
 from sacrebleu import corpus_bleu
 import numpy as np
-
 import datasets
 import argparse
 from unsloth.trainer import SFTTrainer
 from transformers import TrainingArguments, DataCollatorForLanguageModeling, AutoModelForCausalLM, AutoTokenizer
-import unsloth
 from unsloth import FastLanguageModel
 import wandb
 
@@ -87,7 +86,7 @@ class CustomSFTTrainer(SFTTrainer):
             generated_ids = model.generate(
                 input_ids=input_ids,
                 attention_mask=inputs.get("attention_mask"),
-                max_new_tokens=128,  # Reduced from 256 for faster inference
+                max_new_tokens=2048,
                 num_beams=1,  # Keep greedy decoding for speed
                 do_sample=False,  # Disable sampling for deterministic fast results
                 use_cache=True,  # Enable KV cache for faster generation
@@ -109,7 +108,7 @@ class MultiModelMoE(nn.Module):
         
         # Ensure config has necessary attributes for compatibility
         if not hasattr(self.config, "_name_or_path"):
-            setattr(self.config, "_name_or_path", "Qwen/Qwen3-1.7B")
+            setattr(self.config, "_name_or_path", "unsloth/qwen3-1.7b-unsloth-bnb-4bit")
         if not hasattr(self.config, "_attn_implementation"):
             setattr(self.config, "_attn_implementation", "flash_attention_2")
         if not hasattr(self.config, "attn_implementation"):
@@ -621,7 +620,7 @@ class MultiModelSFTTrainer(CustomSFTTrainer):
             generated_ids = model.generate(
                 input_ids=input_ids,
                 attention_mask=inputs.get("attention_mask"),
-                max_new_tokens=256,
+                max_new_tokens=2048,
                 num_beams=1,  # Keep greedy decoding for speed
                 do_sample=False,  # Disable sampling for deterministic fast results
                 use_cache=True,  # Enable KV cache for faster generation

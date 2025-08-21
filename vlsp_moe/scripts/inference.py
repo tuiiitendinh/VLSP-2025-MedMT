@@ -2,7 +2,6 @@ import torch
 import os
 import logging
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from swift.llm import get_template
 from peft import PeftModel
 from config import Config
 
@@ -62,12 +61,9 @@ def load_model_and_tokenizer(model_path, config_path):
     # Load configuration
     config = Config(config_path)
     
-    # # Load base model and tokenizer using Swift
-    # model, tokenizer = get_model_tokenizer(
-    #     config.model["model_id_or_path"]
-    # )
-    model = AutoModelForCausalLM.from_pretrained(model_path)
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    
+    model = AutoModelForCausalLM.from_pretrained(config.model["model_id_or_path"])
+    tokenizer = AutoTokenizer.from_pretrained(config.model["model_id_or_path"])
 
     # Configure tokenizer properly for decoder-only generation
     tokenizer = configure_tokenizer_for_generation(tokenizer)
@@ -77,7 +73,7 @@ def load_model_and_tokenizer(model_path, config_path):
     model.eval()
     
     # Get template for formatting
-    template = get_template(config.model["template"], tokenizer)
+    template = config.model["template"]
     
     logger.info("Model and tokenizer loaded successfully")
     return model, tokenizer, template
@@ -116,7 +112,7 @@ def infer(model, tokenizer, template, input_file, output_file):
                 outputs = model.generate(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
-                    max_new_tokens=256,
+                    max_new_tokens=2048,
                     num_beams=1,  # Greedy decoding for speed
                     do_sample=False,  # Deterministic for consistent results
                     use_cache=True,  # Enable KV cache

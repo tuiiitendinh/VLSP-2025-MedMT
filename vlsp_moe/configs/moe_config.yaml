@@ -16,9 +16,9 @@ dataset:
 device: cuda
 
 model:
-  model_id_or_path: Qwen/Qwen3-1.7B
+  model_id_or_path: unsloth/qwen3-1.7b-unsloth-bnb-4bit
   template: qwen
-  _name_or_path: Qwen/Qwen3-1.7B
+  _name_or_path: unsloth/qwen3-1.7b-unsloth-bnb-4bit
   model_type: qwen
   architectures: ["QwenForCausalLM"]
   torch_dtype: auto
