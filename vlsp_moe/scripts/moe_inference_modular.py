@@ -59,8 +59,8 @@ class MoEInference:
 
 if __name__ == "__main__":
     # Example usage
-    MODEL_PATH = "<path_to_trained_model>"
-    CONFIG_PATH = "<path_to_config_file>"
+    MODEL_PATH = "/home/users/sutd/1010042/VLSP-2025-MedMT/checkpoint-33750/"
+    CONFIG_PATH = "/home/users/sutd/1010042/VLSP-2025-MedMT/vlsp_moe/configs/moe_config.yaml"
 
     # Ensure paths are updated before running
     assert os.path.exists(MODEL_PATH), "Model path does not exist. Update MODEL_PATH."

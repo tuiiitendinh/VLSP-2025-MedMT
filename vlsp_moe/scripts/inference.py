@@ -22,7 +22,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 # Define paths
 MODEL_PATH = "/home/users/sutd/1010042/VLSP-2025-MedMT/checkpoint-33750/"
-CONFIG_PATH = os.path.join(PROJECT_ROOT, "vlsp_moe", "configs", "moe_config.yaml")
+CONFIG_PATH = "/home/users/sutd/1010042/VLSP-2025-MedMT/vlsp_moe/configs/moe_config.yaml"
 INPUT_FILE = "/home/users/sutd/1010042/VLSP-2025-MedMT/test_data/test.en.txt"  # File containing input sentences
 OUTPUT_FILE = "/home/users/sutd/1010042/VLSP-2025-MedMT/test_data_output/test.vi.txt"  # File to save the inference results
 
@@ -94,18 +94,15 @@ def infer(model, tokenizer, template, input_file, output_file):
         for i, sentence in enumerate(input_sentences):
             logger.info(f"Processing sentence {i+1}/{len(input_sentences)}")
             
-            # Format input using template (following evaluate_moe.py pattern)
-            messages = [
-                {
-                    "role": "user", 
-                    "content": f"Translate the following English sentence to Vietnamese: {sentence}"
-                }
-            ]
+            # Format input using the same chat template as training
+            # Training format: {user_content}<eos_token>{assistant_content}<eos_token>
+            # For inference: {user_content}<eos_token> and let model generate the rest
+            user_content = f"Translate the following English sentence to Vietnamese: {sentence}"
+            formatted_input = f"{user_content}{tokenizer.eos_token}"
             
-            # Encode input using template
-            inputs = template.encode(messages)
-            input_ids = torch.tensor([inputs['input_ids']])
-            attention_mask = torch.tensor([inputs['attention_mask']])
+            # Encode the formatted input
+            input_ids = torch.tensor([tokenizer.encode(formatted_input)])
+            attention_mask = torch.ones_like(input_ids)
             
             # Generate translation with optimized parameters
             with torch.no_grad(), torch.amp.autocast('cuda', enabled=True, dtype=torch.bfloat16):
@@ -123,11 +120,21 @@ def infer(model, tokenizer, template, input_file, output_file):
             # Decode output
             generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
             
-            # Extract translation (following evaluate_moe.py pattern)
-            if "assistant" in generated_text:
-                translation = generated_text.split("assistant")[-1].strip()
+            # Extract translation using the same logic as training format
+            # Since input format is: {user_content}<eos_token>, we need to extract what comes after
+            if tokenizer.eos_token in generated_text:
+                # Split by eos_token and take the part after the input
+                parts = generated_text.split(tokenizer.eos_token)
+                # Find the first non-empty part after the input
+                for i, part in enumerate(parts[1:], 1):  # Skip the input part
+                    if part.strip():
+                        translation = part.strip()
+                        break
+                else:
+                    translation = parts[-1].strip() if parts else ""
             else:
-                translation = generated_text.strip()
+                # Fallback: remove the input from the output
+                translation = generated_text[len(formatted_input):].strip()
             
             outf.write(translation + "\n")
 

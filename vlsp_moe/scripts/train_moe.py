@@ -466,7 +466,7 @@ class MultiModelMoE(nn.Module):
             medical_model_name = config_data.get('medical_model_name', 'prithivMLmods/Sculptor-Qwen3_Med-Reasoning')
             translation_model_name = config_data.get('translation_model_name', 'Qwen/Qwen3-1.7B')
             medical_keywords = config_data.get('medical_keywords', [])
-            vocab_size = config_data.get('vocab_size', 151936)  # Default Qwen3 vocab size
+            vocab_size = config_data.get('vocab_size', 151672)  # Default Qwen3 vocab size
             embedding_size = config_data.get('embedding_size', 2048)
             
             # Load the translation model (which includes LoRA adapters)
