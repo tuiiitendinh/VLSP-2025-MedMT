@@ -5,6 +5,8 @@ from sacrebleu import corpus_bleu
 from unsloth import FastLanguageModel
 import os
 import torch.nn as nn
+from pathlib import Path
+from config import Config
 
 # Set environment variable to force left padding for all tokenizers
 os.environ["TOKENIZERS_PADDING_SIDE"] = "left"
@@ -27,7 +29,6 @@ def configure_tokenizer_for_generation(tokenizer):
     
     # Set padding side to left for decoder-only models
     tokenizer.padding_side = 'left'
-    
     # Ensure pad token is set
     if tokenizer.pad_token is None:
         if tokenizer.eos_token is not None:
@@ -302,8 +303,8 @@ class MultiModelMoE(nn.Module):
             medical_model_name = config_data.get('medical_model_name', 'prithivMLmods/Sculptor-Qwen3_Med-Reasoning')
             translation_model_name = config_data.get('translation_model_name', 'Qwen/Qwen3-1.7B')
             medical_keywords = config_data.get('medical_keywords', [])
-            vocab_size = config_data.get('vocab_size', 151672)
-            embedding_size = config_data.get('embedding_size', 2048)
+            vocab_size = config_data.get('vocab_size', 32000)
+            embedding_size = config_data.get('embedding_size', 151672)
             
             # Load the translation model (which includes LoRA adapters)
             translation_model, translation_tokenizer = FastLanguageModel.from_pretrained(
@@ -376,7 +377,7 @@ class MultiModelMoE(nn.Module):
             return model
         else:
             raise ValueError(f"Could not find moe_config.json in {pretrained_model_name_or_path}")
-# --- Model Creation ---
+
 def create_model(config):
     medical_model_name = "prithivMLmods/Sculptor-Qwen3_Med-Reasoning"
     
@@ -390,7 +391,7 @@ def create_model(config):
     )
     # Configure tokenizer properly for decoder-only generation
     medical_tokenizer = configure_tokenizer_for_generation(medical_tokenizer)
-    
+
     # Load translation model with Flash Attention 2 for faster training
     translation_model, translation_tokenizer = FastLanguageModel.from_pretrained(
         model_name=config.model["model_id_or_path"],
@@ -398,20 +399,30 @@ def create_model(config):
         dtype=None,
         load_in_4bit=True,
         attn_implementation="flash_attention_2",
+        resize_model_vocab=151672
     )
     # Configure tokenizer properly for decoder-only generation
     translation_tokenizer = configure_tokenizer_for_generation(translation_tokenizer)
     
     # Use translation tokenizer as primary tokenizer (already configured)
     tokenizer = translation_tokenizer
-    
+
+    # fix: add PAD token
+    if tokenizer.pad_token is None or tokenizer.pad_token == tokenizer.eos_token:
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        tokenizer.pad_token = '[PAD]'
+        # fix: update medical_tokenizer if needed
+        if medical_tokenizer.pad_token is None or medical_tokenizer.pad_token == medical_tokenizer.eos_token:
+            medical_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+            medical_tokenizer.pad_token = '[PAD]'
+
     special_tokens_to_add = ["<medical>", "<en_vi>", "<vi_en>"]
     tokenizer.add_special_tokens({"additional_special_tokens": special_tokens_to_add})
-    
-    # Resize embeddings for both models to match the tokenizer
+
+    # fix: resize embeddings for both models to match the tokenizer
     medical_model.resize_token_embeddings(len(tokenizer))
     translation_model.resize_token_embeddings(len(tokenizer))
-    
+
     # Apply LoRA to translation model only (medical model stays as is)
     translation_model = FastLanguageModel.get_peft_model(
         translation_model,
@@ -421,10 +432,10 @@ def create_model(config):
         bias=config.lora["bias"],
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     )
-    
+
     # Create the multi-model MoE
     model = MultiModelMoE(medical_model, translation_model, tokenizer, config)
-    
+
     return model, tokenizer
 
 if __name__ == "__main__":
@@ -437,7 +448,8 @@ if __name__ == "__main__":
     model.to(DEVICE)
     model.eval()
 
-    input_ids = tokenizer.encode("Translate the following English sentence to Vietnamese: For HFrEF patients with acute HF exacerbation already taking a beta-blocker, the dose should not be decreased or stopped unless absolutely necessary.", return_tensors="pt").to(DEVICE)
+    # input_ids = tokenizer.encode("Translate the following English sentence to Vietnamese, do not say anything else: For HFrEF patients with acute HF exacerbation already taking a beta-blocker, the dose should not be decreased or stopped unless absolutely necessary.", return_tensors="pt").to(DEVICE)
+    input_ids = tokenizer.encode("Translate the following Vietnamese sentence to English: Đây chính là cơ sở cho việc vận dụng các tiêu chuẩn đã được xây dựng để kiểm soát chất lượng dược liệu lá đinh lăng và các dạng bào chế từ lá đinh lăng, góp phần vào công tác đánh giá chất lượng của dược liệu.", return_tensors="pt").to(DEVICE)
     inputs = {
         "input_ids": input_ids,
         "attention_mask": torch.ones_like(input_ids),
@@ -448,7 +460,7 @@ if __name__ == "__main__":
         output = model.generate(
             input_ids=inputs["input_ids"],
             attention_mask=inputs["attention_mask"],
-            max_new_tokens=max_new_tokens,
+            max_new_tokens=2048,
             num_beams=1,  # Keep greedy decoding for speed
             do_sample=False,  # Disable sampling for deterministic fast results
             use_cache=True,  # Enable KV cache for faster generation
@@ -457,46 +469,29 @@ if __name__ == "__main__":
         )
     
     # Decode the full output
-    full_output = tokenizer.decode(output[0], skip_special_tokens=True)
-    
-    # Extract only the generated part (after the input prompt)
-    # Since we added eos_token after the prompt, we split on it and take the last part
-    if tokenizer.eos_token in full_output:
-        # Split by eos_token and take the last non-empty part
-        parts = full_output.split(tokenizer.eos_token)
-        # Find the first non-empty part after the input
-        for i, part in enumerate(parts[1:], 1):  # Skip the input part
-            if part.strip():
-                generated_text = part.strip()
-                break
-        else:
-            generated_text = parts[-1].strip() if parts else ""
-    else:
-        # Fallback: remove the input prompt from the output
-        generated_text = full_output[len(formatted_input):].strip()
-    
-    return generated_text
+    full_output = tokenizer.decode(output[0], skip_special_tokens=False)
+    print(full_output)
 
-if __name__ == "__main__":
-    # Allow overriding config path via CLI to match run scripts
-    default_config_path = os.path.join(PROJECT_ROOT, "vlsp_moe", "configs", "moe_config.yaml")
-    config_path = default_config_path
-    config = Config(config_path)
+# if __name__ == "__main__":
+#     # Allow overriding config path via CLI to match run scripts
+#     default_config_path = os.path.join(PROJECT_ROOT, "vlsp_moe", "configs", "moe_config.yaml")
+#     config_path = default_config_path
+#     config = Config(config_path)
 
-    # Create model and tokenizer
-    model, tokenizer = create_model(config)
-    model.to(DEVICE)
-    model.eval()
+#     # Create model and tokenizer
+#     model, tokenizer = create_model(config)
+#     model.to(DEVICE)
+#     model.eval()
     
-    # Test with a medical translation example
-    test_prompt = "Translate the following English sentence to Vietnamese: For HFrEF patients with acute HF exacerbation already taking a beta-blocker, the dose should not be decreased or stopped unless absolutely necessary."
+#     # Test with a medical translation example
+#     test_prompt = "Translate the following English sentence to Vietnamese: For HFrEF patients with acute HF exacerbation already taking a beta-blocker, the dose should not be decreased or stopped unless absolutely necessary."
     
-    print("Input prompt:")
-    print(test_prompt)
-    print("\nFormatted input (with chat template):")
-    formatted = format_input_for_inference(test_prompt, tokenizer)
-    print(repr(formatted))  # Show the actual format with eos_token
+#     print("Input prompt:")
+#     print(test_prompt)
+#     print("\nFormatted input (with chat template):")
+#     formatted = format_input_for_inference(test_prompt, tokenizer)
+#     print(repr(formatted))  # Show the actual format with eos_token
     
-    print("\nGenerated translation:")
-    result = run_inference(model, tokenizer, test_prompt)
-    print(result)
+#     print("\nGenerated translation:")
+#     result = run_inference(model, tokenizer, test_prompt)
+#     print(result)
